@@ -1,29 +1,17 @@
 /**
- * Task 3: Effort purchase task (NOVEL — the empirical hinge of the
- * unification per CLAUDE.md §8).
+ * Task 3: Effort purchase task — novel; the empirical hinge of the
+ * unification (CLAUDE.md §8).
  *
- * Design parallel: the standard purchase task asks "how many would you buy
- * at price $X?" measuring consumption Q as a function of monetary price P.
- * The effort purchase task asks "how many would you do at effort cost X?"
- * measuring consumption Q as a function of *effort* price.
+ * Parallel to Task 1 with effort substituted for money: each "price"
+ * is `effortPrice` seconds of sustained key-pressing at `pMax`, and
+ * the participant reports how many max-reward units they would
+ * acquire. Under the unified model both `Q(P_money)` and
+ * `Q(P_effort)` follow Koffarnus demand with a *shared* alpha — that
+ * shared-alpha hypothesis is the H1 test.
  *
- * Operationally: each "price" is an effort cost expressed in seconds of
- * sustained key-pressing at the subject's calibration rate `pMax`. A price
- * of 0.5 means "0.5 seconds of effort per unit reward acquired"; the
- * subject is asked how many of the maximum-reward unit they would acquire
- * at that effort cost. The dependent measure is `Q(P_effort)`, exactly
- * analogous to `Q(P_money)` in Task 1.
- *
- * Why this works for the unification: under the model in
- * `docs/derivation.md`, both Q-vs-P_money and Q-vs-P_effort follow a
- * Koffarnus exponential demand curve with a *shared α*. The H1 test is
- * whether the joint two-task fit prefers a shared α over independent αs.
- *
- * Bounds checking: at very high effort prices, the participant might
- * report an absurdly large number of units. We clamp the displayed
- * acceptable range against `pMax` and the participant's own time budget
- * (10 minutes total assumed), and warn the participant if they exceed
- * that, but accept their answer either way for analysis.
+ * Bounds: a soft cap from a `HYPOTHETICAL_BUDGET_MINUTES` time
+ * budget triggers a warning if exceeded but does not reject the
+ * answer.
  */
 
 import jsPsychInstructions from "@jspsych/plugin-instructions";
@@ -52,21 +40,12 @@ export interface EffortPurchaseTaskResult {
 /** Total session minutes assumed available for hypothetical acquisitions. */
 const HYPOTHETICAL_BUDGET_MINUTES = 10;
 
-/**
- * Soft feasibility cap on hypothetical units at a given effort price.
- *
- * "Hypothetical budget" of `B_min` minutes at the subject's rate `pMax`
- * gives a maximum number of units `(B_min * 60) / effortPrice`. We use
- * this only as a warning threshold; the participant's answer is recorded
- * regardless.
- */
+/** Soft feasibility cap: max units fitting in `HYPOTHETICAL_BUDGET_MINUTES` minutes. */
 function feasibilityCap(effortPrice: number): number {
   return Math.max(1, Math.floor((HYPOTHETICAL_BUDGET_MINUTES * 60) / effortPrice));
 }
 
-/**
- * Build the full effort-purchase-task timeline.
- */
+/** Full effort-purchase-task timeline plus a `readResult` reader. */
 export function buildEffortPurchaseTaskTimeline(pMax: number): {
   timeline: unknown[];
   readResult: () => EffortPurchaseTaskResult;

@@ -1,25 +1,12 @@
 """Parameter-recovery experiments for the unified model.
 
-For each requested sample size, simulate ``n`` subjects from a known
-population, fit them back, and report bias / RMSE / 95% CI width per
-parameter. CLAUDE.md §4 Phase 3 step 1 specifies n ∈ {30, 60, 120, 240}
-and a target of <5% bias plus interpretable CI widths at the planned
-sample size.
+CLAUDE.md §4 Phase 3 step 1: at each ``n`` ∈ {30, 60, 120, 240},
+simulate, fit, report bias / RMSE / success rate per parameter.
 
-Two recovery designs:
-
-* **Single-task** — fit the Koffarnus demand form to each subject's
-  purchase-task data, recovering ``(Q0, alpha, k)``. Establishes a
-  baseline; if the basic demand model can't be recovered there is no
-  hope for the unified model.
-* **Joint-task (unified)** — for each subject, fit ``UnifiedCapabilityBounded``
-  to their *combined* purchase-task and effort-discount data, recovering
-  ``(Q0, alpha, k, B)`` jointly. Tests CLAUDE.md H1's parameter-linkage
-  prediction in the synthetic-data limit.
-
-Both designs anchor ``B`` to its true value in the joint-task case to
-mimic the planned experimental practice of fixing ``B`` from measured
-MVC / N-back (CLAUDE.md §9).
+- :func:`recover_demand` — Koffarnus on the purchase task alone.
+- :func:`recover_unified_joint` — UnifiedCapabilityBounded on the joint
+  purchase + effort-discount data with ``B`` anchored to the true
+  value (mirrors the experimental practice of fixing B from MVC).
 """
 
 from __future__ import annotations
@@ -52,20 +39,8 @@ FloatArray = NDArray[np.floating[Any]]
 class ParameterRecovery:
     """Recovery summary for one parameter across a population of fits.
 
-    Attributes
-    ----------
-    name : str
-        Parameter name.
-    true : ndarray
-        True values, one per subject.
-    fit : ndarray
-        Fitted values, one per subject. ``nan`` for failed fits.
-    bias_rel : float
-        Median relative bias ``(fit - true) / true`` across successful fits.
-    rmse_rel : float
-        Root mean squared relative error across successful fits.
-    success_rate : float
-        Fraction of fits that converged.
+    ``bias_rel`` and ``rmse_rel`` are ``(fit - true) / true`` summaries
+    over successful fits; failed fits are ``nan`` in ``fit``.
     """
 
     name: str
@@ -172,21 +147,11 @@ def _fit_unified_joint(
     fix_B: bool = True,
     fix_k: float | None = None,
 ) -> dict[str, float] | None:
-    """Fit UnifiedCapabilityBounded jointly to one subject's two task datasets.
+    """Fit UnifiedCapabilityBounded jointly to one subject's purchase + effort data.
 
-    Residuals are computed in two scales (log10 for purchase task, linear
-    for SV) and concatenated. ``B`` is held fixed at the true value when
-    ``fix_B`` is true, mirroring the experimental practice of anchoring
-    B to measured capability.
-
-    Parameters
-    ----------
-    fix_k
-        If given, hold ``k`` constant at this value across the fit.
-        Pre-registered analysis (``docs/analysis_plan.md``) shares ``k``
-        across subjects in both NLS and Bayesian fits; in the population-
-        scale recovery experiments this is enforced by passing the
-        population median of the simulated true ``k`` values.
+    Residuals are concatenated across the two scales (log10 for Q,
+    linear for SV). ``fix_B`` anchors ``B`` to the subject's true
+    value; ``fix_k`` anchors ``k`` (the pre-registered NLS commitment).
     """
     P_obs, Q_obs = purchase_data
     E_obs, SV_obs = effort_data
@@ -265,24 +230,15 @@ def recover_unified_joint(
     b_noise_pct: float = 0.0,
     share_k: bool = True,
 ) -> RecoveryReport:
-    """Fit the unified model jointly to purchase + effort-discount data per subject.
+    """Joint per-subject unified-model fit across a population.
 
-    Parameters
-    ----------
-    b_noise_pct
-        Multiplicative log-normal noise applied to the ``B`` value passed
-        to the joint fit, with ``b_noise_pct`` interpreted as approximate
-        relative-error percentage (sd in log-space ≈ ``b_noise_pct / 100``).
-        ``0`` reproduces the original "B fixed at truth" recovery; positive
-        values mimic measurement noise on MVC / N-back. The data are still
-        generated from the true ``B``; only the value the fitter sees is
-        perturbed.
-    share_k
-        If True (default, pre-registered modeling commitment), ``k`` is
-        held constant at the population median of the *true* per-subject
-        ``k`` values. Mimics the real-data practice of estimating ``k``
-        in the pilot and locking it for the main analysis. If False,
-        ``k`` is fit per subject (Phase 3 pre-2026-01 default).
+    ``b_noise_pct`` injects log-normal noise on the ``B`` value seen by
+    the fitter (data still generated from true ``B``) — quantifies
+    sensitivity to MVC / N-back measurement error.
+
+    ``share_k=True`` (the default, pre-registered) anchors ``k`` at the
+    population median; ``share_k=False`` fits ``k`` per subject as a
+    sensitivity check.
     """
     n = len(subjects)
     names = ("Q0", "alpha", "k")
@@ -328,20 +284,14 @@ def sample_size_sweep(
     fix_k: float | None = None,
     b_noise_pct: float = 0.0,
 ) -> list[RecoveryReport]:
-    """Run a recovery experiment at each requested sample size.
+    """Run recovery at each ``n``. ``mode`` selects the fitting strategy.
 
-    Parameters
-    ----------
-    mode
-        One of:
+    Modes:
 
-        * ``"single_free_k"`` — Koffarnus to purchase task only, all params free.
-        * ``"single_fixed_k"`` — Koffarnus to purchase task only, ``k`` fixed
-          at ``fix_k`` (population median by default).
-        * ``"joint"`` — UnifiedCapabilityBounded jointly to purchase + effort
-          discounting, ``B`` fixed at the true subject-specific value.
-
-    Each run uses an independent RNG seeded from ``seed`` plus the size.
+    - ``single_free_k`` — Koffarnus on purchase task only, all params free.
+    - ``single_fixed_k`` — Koffarnus on purchase task only, ``k`` fixed.
+    - ``joint`` — UnifiedCapabilityBounded jointly on purchase + effort,
+      ``B`` fixed at the true subject value.
     """
     valid = {"single_free_k", "single_fixed_k", "joint"}
     if mode not in valid:

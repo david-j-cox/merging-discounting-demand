@@ -1,26 +1,12 @@
 """Group-level analyses for the pre-registered hypotheses.
 
-Three primary outputs:
+All functions consume the ``InferenceData`` from
+:func:`edu.fitting.bayesian.fit_unified_hierarchical`:
 
-- :func:`linkage_correlation` — H1-stronger. Posterior correlation between
-  per-subject ``alpha`` (from the hierarchical fit) and an externally
-  derived effort-discount steepness (typically a per-subject NLS fit of
-  one of the discount forms to Task 2 alone). Propagates posterior
-  uncertainty in ``alpha`` through to the correlation.
-
-- :func:`arm_contrast` — H3. Posterior of the difference in population-
-  level ``alpha`` between substitutability arms. Reads the per-subject
-  arm assignment plus the alpha posterior; reports the difference of
-  arm-conditional means and the posterior probability that the
-  difference is in the predicted direction.
-
-- :func:`posterior_predictive_purchase` and
-  :func:`posterior_predictive_sv` — PPCs. Generate replicate purchase
-  and SV data from posterior draws so callers can compare against
-  observations.
-
-All functions accept the InferenceData object from
-:func:`edu.fitting.bayesian.fit_unified_hierarchical`.
+- :func:`linkage_correlation` — H1-stronger.
+- :func:`arm_contrast` — H3.
+- :func:`posterior_predictive_purchase`, :func:`posterior_predictive_sv`
+  — model-adequacy PPCs.
 """
 
 from __future__ import annotations
@@ -44,25 +30,10 @@ FloatArray = NDArray[np.floating[Any]]
 
 @dataclass(frozen=True)
 class LinkageCorrelation:
-    """Posterior summary of the per-subject correlation.
+    """Posterior summary of Pearson r between per-subject alpha and an external steepness.
 
-    ``alpha`` (from the joint Bayesian fit) is correlated against
-    ``lambda_external`` — typically a per-subject NLS estimate of the
-    steepness of effort discounting from Task 2 in isolation.
-
-    Attributes
-    ----------
-    correlation_mean : float
-        Mean of the posterior on Pearson r.
-    correlation_hdi : (float, float)
-        95% HDI on the correlation.
-    p_positive : float
-        Posterior probability that the correlation is positive (the
-        H1-stronger predicted direction).
-    n_subjects : int
-        How many subjects contributed to the correlation.
-    n_draws : int
-        Number of posterior draws used.
+    ``p_positive`` is the posterior probability that ``r > 0`` (the
+    H1-stronger predicted direction).
     """
 
     correlation_mean: float
@@ -78,28 +49,17 @@ def linkage_correlation(
     *,
     transform: Literal["log", "linear"] = "log",
 ) -> LinkageCorrelation:
-    """Posterior correlation between subject-level ``alpha`` and an external steepness.
+    """Posterior of Pearson r between per-subject ``alpha`` and ``lambda_external``.
 
-    Each posterior draw of ``alpha[i]`` (vector across subjects) is
-    correlated against the fixed ``lambda_external``; the distribution
-    of correlations across draws is the posterior of Pearson r.
+    For each posterior draw, correlate the vector of per-subject
+    ``alpha`` values against ``lambda_external``; the distribution of
+    those correlations is the posterior r. The default ``log`` transform
+    matches the model-derived multiplicative linkage; ``linear`` skips
+    the transform.
 
-    Parameters
-    ----------
-    idata
-        Hierarchical posterior; must have ``alpha`` of shape
-        ``(chain, draw, n_subjects)``.
-    lambda_external
-        Per-subject externally-derived steepness, length ``n_subjects``.
-        Treated as fixed; the *external* steepness's measurement
-        uncertainty is not propagated through this function (the
-        ``alpha`` posterior uncertainty is). For the main analysis we
-        plan to substitute Bayesian posterior samples for both
-        quantities; that path can be added when needed.
-    transform
-        ``"log"`` correlates ``log(alpha)`` against ``log(lambda_external)``
-        (matches the model-derived linkage on a multiplicative scale);
-        ``"linear"`` does not transform.
+    ``lambda_external`` is treated as fixed — its own measurement
+    uncertainty is not propagated. (Substituting posterior samples for
+    both quantities is the natural extension when needed.)
     """
     alpha = _stack_samples(idata, "alpha")  # (n_draws, n_subj)
     n_draws, n_subj = alpha.shape
@@ -153,21 +113,11 @@ def linkage_correlation(
 
 @dataclass(frozen=True)
 class ArmContrast:
-    """Posterior of the population-level alpha difference between arms.
+    """Posterior of ``log10(alpha | low) - log10(alpha | high)`` (H3).
 
-    Attributes
-    ----------
-    diff_log_alpha_mean : float
-        Posterior mean of ``mean(log10 alpha | low) - mean(log10 alpha | high)``.
-        H3 predicts a positive value (low-IF arm has steeper discounting).
-    diff_log_alpha_hdi : (float, float)
-        95% HDI on the difference.
-    p_predicted_direction : float
-        Posterior probability that the difference is positive.
-    n_low, n_high : int
-        Subject counts per arm.
-    n_draws : int
-        Number of posterior draws used.
+    H3 predicts a positive value (low-IF arm has steeper discounting).
+    ``p_predicted_direction`` is the posterior probability the
+    difference is positive.
     """
 
     diff_log_alpha_mean: float
@@ -182,33 +132,15 @@ def arm_contrast(
     idata: az.InferenceData,
     arm: NDArray[np.str_] | list[str],
 ) -> ArmContrast:
-    """Compute the posterior of the per-arm alpha difference.
+    """Posterior of the H3 alpha contrast between low-IF and high-IF arms.
 
-    Two paths:
+    Preferred path: when ``idata`` has ``diff_log_alpha`` (the fit was
+    run with ``arm_index=...``), read the deterministic directly.
 
-    - **Preferred** (used when the fit was run with ``arm_index=...``):
-      read the deterministic ``diff_log_alpha`` directly from the posterior.
-      Equivalent to ``log10`` of the ratio of the per-arm population means
-      and is unbiased under the synthetic test in
-      ``notebooks/05_pilot_analysis.ipynb``.
-
-    - **Fallback** (single-population fit): construct the contrast
-      ``mean(log10 alpha_i | low) - mean(log10 alpha_i | high)`` from the
-      per-subject ``alpha`` posterior. This path is biased upward by
-      ~0.05 log units when arms genuinely differ — fine for sensitivity
-      checks but not for the primary H3 result. A warning is emitted
-      when this path is taken.
-
-    Parameters
-    ----------
-    idata
-        Hierarchical posterior. Must contain ``alpha`` of shape
-        (chain, draw, n_subj). If it also contains ``diff_log_alpha``
-        (i.e. the model was fit with ``arm_index=...``) the preferred
-        path is used.
-    arm
-        Per-subject arm assignment, length n_subj. Each entry must be
-        ``"low"`` or ``"high"``.
+    Fallback: contrast per-subject ``alpha`` posteriors by arm. Biased
+    upward by ~0.05 log units when arms genuinely differ; a warning is
+    emitted. See ``notebooks/05_pilot_analysis.ipynb`` for the
+    validation that drove this design.
     """
     arm_arr = np.asarray(arm)
 
@@ -275,22 +207,42 @@ def arm_contrast(
 class PosteriorPredictive:
     """Replicate datasets drawn from the posterior.
 
-    Attributes
-    ----------
-    replicates
-        Shape ``(n_draws, n_subjects, n_points)``. Each replicate is a
-        sampled value from the posterior predictive at the given price /
-        effort grid point.
-    observed
-        Shape ``(n_subjects, n_points)``. The observed data for direct
-        comparison.
-    grid
-        Shape ``(n_points,)``. The price or effort grid points.
+    Shapes: ``replicates`` ``(n_draws, n_subjects, n_points)``,
+    ``observed`` ``(n_subjects, n_points)``, ``grid`` ``(n_points,)``.
     """
 
     replicates: FloatArray
     observed: FloatArray
     grid: FloatArray
+
+
+def _draw_subject_params(
+    idata: az.InferenceData,
+    extra_var: str,
+    *,
+    n_draws: int | None,
+    rng: np.random.Generator | None,
+) -> tuple[FloatArray, FloatArray, FloatArray, FloatArray, np.random.Generator, int]:
+    """Pull (alpha, Q0, k_full, sigma) posterior arrays, optionally thinning to ``n_draws``.
+
+    Returns the four arrays plus a Generator and the (post-thinning)
+    draw count, ready for the broadcasted likelihood evaluation.
+    """
+    alpha = _stack_samples(idata, "alpha")
+    Q0 = _stack_samples(idata, "Q0")
+    if "k_shared" in idata.posterior:  # type: ignore[attr-defined,unused-ignore]
+        k_full = np.broadcast_to(_stack_samples(idata, "k_shared")[:, None], alpha.shape)
+    else:
+        k_full = _stack_samples(idata, "k_subj")
+    sigma = _stack_samples(idata, extra_var)
+
+    rng = rng or np.random.default_rng(0)
+    n_total = alpha.shape[0]
+    if n_draws is not None and n_draws < n_total:
+        idx = rng.choice(n_total, n_draws, replace=False)
+        alpha, Q0, k_full, sigma = alpha[idx], Q0[idx], k_full[idx], sigma[idx]
+        n_total = n_draws
+    return alpha, Q0, np.asarray(k_full), sigma, rng, n_total
 
 
 def posterior_predictive_purchase(
@@ -301,45 +253,22 @@ def posterior_predictive_purchase(
     n_draws: int | None = None,
     rng: np.random.Generator | None = None,
 ) -> PosteriorPredictive:
-    """Sample replicate purchase-task Q values from the posterior.
-
-    Uses the model's mean prediction at each posterior draw plus the
-    posterior ``sigma_purchase`` to draw log10-Gaussian noise.
-    """
-    alpha = _stack_samples(idata, "alpha")  # (D, n_subj)
-    Q0 = _stack_samples(idata, "Q0")
-    if "k_shared" in idata.posterior:  # type: ignore[attr-defined,unused-ignore]
-        k_full = _stack_samples(idata, "k_shared")  # (D,)
-        k_full = np.broadcast_to(k_full[:, None], alpha.shape)
-    else:
-        k_full = _stack_samples(idata, "k_subj")
-    sigma_purchase = _stack_samples(idata, "sigma_purchase")  # (D,)
-
-    D, n_subj = alpha.shape
+    """Replicate purchase-task Q values from the posterior (log10-Gaussian noise)."""
+    alpha, Q0, k_full, sigma, rng, D = _draw_subject_params(
+        idata, "sigma_purchase", n_draws=n_draws, rng=rng
+    )
+    n_subj = alpha.shape[1]
     n_p = P.shape[0]
-    if n_draws is not None and n_draws < D:
-        idx = (rng or np.random.default_rng(0)).choice(D, n_draws, replace=False)
-        alpha = alpha[idx]
-        Q0 = Q0[idx]
-        k_full = k_full[idx]
-        sigma_purchase = sigma_purchase[idx]
-        D = n_draws
 
-    rng = rng or np.random.default_rng(0)
-    Q0_b = Q0[:, :, None]  # (D, n_subj, 1)
+    Q0_b = Q0[:, :, None]
     alpha_b = alpha[:, :, None]
     k_b = k_full[:, :, None]
     P_b = P[None, None, :]
     Q_pred = Q0_b * np.power(10.0, k_b * (np.exp(-alpha_b * Q0_b * P_b) - 1.0))
     log_q_pred = np.log10(np.maximum(Q_pred, 1e-12))
-    noise = rng.normal(0.0, sigma_purchase[:, None, None], size=(D, n_subj, n_p))
-    log_q_repl = log_q_pred + noise
-    replicates = np.power(10.0, log_q_repl)
-    return PosteriorPredictive(
-        replicates=replicates,
-        observed=Q_obs,
-        grid=P,
-    )
+    noise = rng.normal(0.0, sigma[:, None, None], size=(D, n_subj, n_p))
+    replicates = np.power(10.0, log_q_pred + noise)
+    return PosteriorPredictive(replicates=replicates, observed=Q_obs, grid=P)
 
 
 def posterior_predictive_sv(
@@ -352,31 +281,12 @@ def posterior_predictive_sv(
     n_draws: int | None = None,
     rng: np.random.Generator | None = None,
 ) -> PosteriorPredictive:
-    """Sample replicate SV values from the unified-model posterior.
+    """Replicate SV values from the unified-model posterior (linear Gaussian noise, clipped at 0)."""
+    alpha, Q0, k_full, sigma, rng, D = _draw_subject_params(
+        idata, "sigma_sv", n_draws=n_draws, rng=rng
+    )
+    n_subj, n_e = alpha.shape[1], E.shape[1]
 
-    Each draw evaluates the capability-bounded SV at the per-subject
-    effort grid plus posterior ``sigma_sv`` Gaussian noise.
-    """
-    alpha = _stack_samples(idata, "alpha")
-    Q0 = _stack_samples(idata, "Q0")
-    if "k_shared" in idata.posterior:  # type: ignore[attr-defined,unused-ignore]
-        k_full = _stack_samples(idata, "k_shared")
-        k_full = np.broadcast_to(k_full[:, None], alpha.shape)
-    else:
-        k_full = _stack_samples(idata, "k_subj")
-    sigma_sv = _stack_samples(idata, "sigma_sv")
-
-    D, n_subj = alpha.shape
-    if n_draws is not None and n_draws < D:
-        idx = (rng or np.random.default_rng(0)).choice(D, n_draws, replace=False)
-        alpha = alpha[idx]
-        Q0 = Q0[idx]
-        k_full = k_full[idx]
-        sigma_sv = sigma_sv[idx]
-        D = n_draws
-    rng = rng or np.random.default_rng(0)
-
-    n_e = E.shape[1]
     Q0_b = Q0[:, :, None]
     alpha_b = alpha[:, :, None]
     k_b = k_full[:, :, None]
@@ -385,12 +295,12 @@ def posterior_predictive_sv(
     demand_term = np.power(10.0, k_b * (np.exp(-alpha_b * Q0_b * E_b / A) - 1.0))
     capability_term = np.where(E_b > 0, B_b / (Q0_b * E_b), np.inf)
     sv_pred = A * np.minimum(demand_term, capability_term)
-    noise = rng.normal(0.0, sigma_sv[:, None, None], size=(D, n_subj, n_e))
+    noise = rng.normal(0.0, sigma[:, None, None], size=(D, n_subj, n_e))
     replicates = np.maximum(sv_pred + noise, 0.0)
     return PosteriorPredictive(
         replicates=replicates,
         observed=SV_obs,
-        grid=np.asarray(E[0], dtype=float),  # representative grid (per-subj scaled)
+        grid=np.asarray(E[0], dtype=float),
     )
 
 

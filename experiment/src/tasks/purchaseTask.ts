@@ -1,13 +1,8 @@
 /**
- * Task 1: Standard hypothetical purchase task.
- *
- * For each price in `PURCHASE_PRICES_USD`, the participant answers
- * "How many [units of commodity] would you buy at this price?". The
- * commodity is generic (a snack-food framing covers the broadest range
- * of participant relevance).
- *
- * Returns the consumption array. Demand-curve fitting (Hursh-Silberberg
- * / Koffarnus) happens post-hoc in the Python analysis, not in-browser.
+ * Task 1: standard hypothetical purchase task. For each price in
+ * `PURCHASE_PRICES_USD`, ask how many of the (generic snack)
+ * commodity the participant would buy. Demand-curve fitting happens
+ * post-hoc in Python.
  */
 
 import jsPsychInstructions from "@jspsych/plugin-instructions";
@@ -33,13 +28,7 @@ const COMMODITY_LABEL = "snack item";
 const COMMODITY_DESCRIPTION =
   "a single small packaged snack (e.g. a candy bar, a small bag of chips, or similar).";
 
-/**
- * Build the full purchase-task timeline.
- *
- * Returns the timeline plus a reader for the resulting `PurchaseTaskResult`.
- * The reader walks jsPsych's data after the timeline runs and assembles the
- * structured result.
- */
+/** Full purchase-task timeline plus a `readResult` reader. */
 export function buildPurchaseTaskTimeline(): {
   timeline: unknown[];
   readResult: () => PurchaseTaskResult;

@@ -79,7 +79,7 @@ async function run(): Promise<void> {
   };
 
   // ---- Calibration ----
-  const calTimeline = buildCalibrationTimeline(jsPsych);
+  const calTimeline = buildCalibrationTimeline();
 
   // The per-trial CalibrationTrial objects are written to data by
   // calibration.ts. We collect them after the timeline completes.
@@ -107,7 +107,7 @@ async function run(): Promise<void> {
     },
     task2_effort_discount: (pMax: number) => {
       const rng = mulberry32(seed + 1);
-      return buildEffortDiscountingTimeline(jsPsych, pMax, rng) as {
+      return buildEffortDiscountingTimeline(pMax, rng) as {
         timeline: unknown[];
         readResult: () => unknown;
       };

@@ -1,15 +1,8 @@
-"""Cross-task linkage simulation.
+"""Cross-task linkage simulation (CLAUDE.md H1).
 
-CLAUDE.md §4 Phase 3 step 3 / §5 H1: a unified model with one α shared
-between Task 1 (standard purchase task) and Task 3 (effort purchase task)
-should fit the joint data as well or better (ΔBIC ≥ 0 favouring shared)
-than a model with independent α per task.
-
-This module simulates the synthetic-data limit: the data are *generated*
-from a single shared α per subject. The shared-α model should fit as well
-as the independent-α model with one fewer parameter, so it should win on
-BIC by approximately ``log(n_obs_combined)`` per subject. The simulation
-verifies this margin is detectable.
+Tests whether shared-alpha beats independent-alpha by BIC when data are
+generated from a single per-subject alpha. The shared model has one
+fewer parameter, so it should win by ``~log(n_obs)`` per subject.
 """
 
 from __future__ import annotations
@@ -33,17 +26,10 @@ FloatArray = NDArray[np.floating[Any]]
 
 @dataclass(frozen=True)
 class LinkageResult:
-    """Outcome of one shared-vs-independent linkage test for a population.
+    """Population summary of the shared-vs-independent ΔBIC test.
 
-    Attributes
-    ----------
-    delta_bic : ndarray
-        Per-subject ``BIC_independent - BIC_shared``. Positive favours
-        shared (i.e. the unification claim).
-    pct_favoring_shared : float
-        Fraction of subjects with ``delta_bic > 0``.
-    median_delta : float
-        Median ΔBIC across subjects.
+    ``delta_bic`` is per-subject ``BIC_indep - BIC_shared``. Positive
+    favours shared (the unification claim).
     """
 
     delta_bic: FloatArray
@@ -66,14 +52,7 @@ def _fit_shared_alpha(
     *,
     fix_k: float,
 ) -> tuple[float, int, dict[str, float]] | None:
-    """Fit one ``alpha`` shared across both tasks plus separate ``Q0`` per task.
-
-    Free params: ``Q0_1, Q0_3, alpha`` (k fixed to mirror the standard
-    fitting convention; treating k as free reintroduces the α-k ridge from
-    the recovery experiment).
-
-    Returns ``(rss, n_obs, params)`` or ``None`` on failure.
-    """
+    """Fit shared ``alpha`` plus per-task ``Q0`` (k held fixed). Returns ``(rss, n_obs, params)``."""
     ko = Koffarnus()
 
     def residuals(x: FloatArray) -> FloatArray:
@@ -156,13 +135,7 @@ def linkage_test(
     log_noise_sd: float = 0.10,
     fix_k: float | None = None,
 ) -> LinkageResult:
-    """Run the shared-vs-independent ΔBIC test across a population.
-
-    For each subject simulate purchase + effort-purchase data (Tasks 1 and 3
-    of the experimental battery) under a single true α, then fit both the
-    shared-α and independent-α models. ΔBIC > 0 means shared wins; the
-    population-level distribution of ΔBIC is the linkage signal.
-    """
+    """Per-population shared-vs-independent ΔBIC test on Tasks 1 and 3."""
     if fix_k is None:
         fix_k = float(np.median([s.k for s in subjects]))
 

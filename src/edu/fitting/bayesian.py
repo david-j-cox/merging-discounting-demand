@@ -1,43 +1,10 @@
 """Hierarchical Bayesian fitting via NumPyro.
 
-CLAUDE.md §5: *"Hierarchical Bayesian throughout. Use NumPyro for speed.
-Specify priors in pre-registration. Report posterior distributions for all
-parameters; do not collapse to point estimates. Use posterior predictive
-checks for model adequacy."*
-
-This module provides per-subject and hierarchical models for the demand,
-discount, and unified-model parameterisations introduced in Phase 1-2.
-The hierarchical pooling on ``alpha`` is the load-bearing piece for
-CLAUDE.md H1: a shared population mean constrains individual ``alpha``
-estimates, which is the partial-pooling analogue of the NLS shared-vs-
-independent ΔBIC test.
-
-Two model shapes:
-
-* **Joint unified** (:func:`hierarchical_unified`) — the primary fitting
-  model for the main study. Per-subject ``Q0_i, alpha_i, k_i`` drawn
-  from population hyperpriors; ``B_i`` is anchored to measured capability
-  (passed in as data). Two task likelihoods:
-
-  - log10-Gaussian on purchase-task consumption (``Q``).
-  - linear Gaussian on effort-discount subjective values (``SV``).
-
-* **Single-task demand** (:func:`hierarchical_demand`) — Koffarnus alone,
-  for sanity comparisons against the joint model. Same hierarchical
-  structure on ``Q0, alpha, k``.
-
-All models use a non-centered parameterisation on the per-subject deviates
-to avoid funnel pathologies in NUTS sampling.
-
-Conventions
------------
-* Priors live in :class:`Priors`. Defaults match ``docs/analysis_plan.md``
-  and were tuned against the synthetic priors in
-  :mod:`edu.simulation.generate`.
-* All models accept an explicit ``rng_key`` (a JAX PRNG key). The
-  fitting helpers wrap key creation from a Python ``int`` seed.
-* :func:`fit_unified_hierarchical` returns ``arviz.InferenceData`` so
-  callers get the full posterior + diagnostics in one object.
+Two models: :func:`hierarchical_unified` (joint purchase + effort fit;
+the primary model for the main study) and :func:`hierarchical_demand`
+(Koffarnus alone, for sanity comparisons). Both use non-centered
+parameterisation to avoid NUTS funnel pathologies. Returns
+``arviz.InferenceData``.
 """
 
 from __future__ import annotations
@@ -65,30 +32,14 @@ FloatArray = NDArray[np.floating[Any]]
 
 @dataclass(frozen=True)
 class Priors:
-    """Population-level hyperpriors for the hierarchical model.
+    """Weakly-informative population hyperpriors.
 
-    All defaults are weakly informative, matched to the population
-    distributions used in :mod:`edu.simulation.generate` (log-normal
-    priors on ``alpha``, ``Q0``, ``B``; truncated normal on ``k``).
-
-    Attributes
-    ----------
-    log_alpha_mean, log_alpha_mean_sd
-        Mean and prior-sd of the log10-mean of ``alpha`` across subjects.
-    log_alpha_scale_concentration
-        Half-Cauchy scale for the population sd of log10(alpha).
-    log_Q0_mean, log_Q0_mean_sd
-        Same for ``Q0``.
-    log_Q0_scale_concentration
-        Half-Cauchy scale for the population sd of log10(Q0).
-    k_mean, k_mean_sd
-        Population mean and its prior-sd for ``k`` (linear scale).
-    k_scale_concentration
-        Half-Cauchy scale for the population sd of ``k``.
-    sigma_purchase_concentration
-        Half-Cauchy scale for the log10-Gaussian noise on purchase data.
-    sigma_sv_concentration
-        Half-Cauchy scale for the linear-Gaussian noise on SV.
+    Defaults are matched to the synthetic priors in
+    :mod:`edu.simulation.generate`: log-normal on ``alpha`` and ``Q0``,
+    truncated-normal on ``k``, half-Cauchy on the population sds and
+    likelihood noise. ``*_mean`` is a Normal prior mean, ``*_mean_sd``
+    its prior sd; ``*_scale_concentration`` is the half-Cauchy scale
+    for the corresponding population sd.
     """
 
     log_alpha_mean: float = -2.0
@@ -162,18 +113,7 @@ def hierarchical_demand(
     *,
     priors: Priors = DEFAULT_PRIORS,
 ) -> None:
-    """NumPyro model for hierarchical Koffarnus demand.
-
-    Parameters
-    ----------
-    P
-        Shared price array, shape ``(n_prices,)``.
-    Q_obs
-        Observed consumption, shape ``(n_subjects, n_prices)`` or ``None``
-        for prior-predictive sampling.
-    priors
-        Population hyperpriors.
-    """
+    """Hierarchical Koffarnus demand for ``Q_obs`` of shape ``(n_subj, n_prices)``."""
     if Q_obs is None:
         msg = "Q_obs is required for posterior sampling; pass shape (n_subjects, n_prices)."
         raise ValueError(msg)
@@ -225,46 +165,21 @@ def hierarchical_unified(
     share_k: bool = True,
     arm_index: jnp.ndarray | None = None,
 ) -> None:
-    """NumPyro model for the hierarchical unified-model joint fit.
+    """Hierarchical unified-model joint fit (purchase + effort discount).
 
-    Parameters
-    ----------
-    P
-        Shared price array, shape ``(n_prices,)``.
-    Q_obs
-        Purchase-task consumption, shape ``(n_subjects, n_prices)``.
-    E
-        Per-subject effort grids (effort = fraction * B), shape
-        ``(n_subjects, n_effort)``.
-    SV_obs
-        Subjective-value observations, shape ``(n_subjects, n_effort)``.
-    B_anchor
-        Per-subject measured capability, shape ``(n_subjects,)``. Anchored,
-        not estimated. Pass the *measured* value (with whatever measurement
-        noise the experiment introduced); the recovery sweep tests how
-        sensitive estimates are to perturbing this.
-    A
-        Reward magnitude (design constant).
-    priors
-        Population hyperpriors.
-    share_k
-        If True (default), sample a single ``k`` across all subjects —
-        Hursh's standard practice in the demand-curve literature. If False,
-        ``k`` partially pools through a hierarchical normal. The shared-k
-        form has one population parameter for ``k`` and no per-subject
-        deviates, which is the most identifiable choice and the one
-        pre-registered in ``docs/analysis_plan.md``.
-    arm_index
-        Optional integer array of shape ``(n_subjects,)`` with values 0
-        (low-IF arm) or 1 (high-IF arm). When supplied, the model
-        estimates a separate ``mu_log_alpha`` per arm; the H3 arm
-        contrast is then read directly from ``mu_log_alpha_per_arm`` in
-        the posterior. When ``None`` (default), one global
-        ``mu_log_alpha`` is shared across all subjects, which is
-        appropriate for the synthetic recovery experiments and the
-        single-arm pilot but **biases the H3 contrast** in real data
-        (see notebook 05). Pass the arm index whenever H3 is being
-        tested.
+    ``B_anchor`` is the per-subject measured capability, anchored not
+    estimated. The recovery sweep in :mod:`edu.simulation.recovery`
+    quantifies sensitivity to perturbing it.
+
+    ``share_k=True`` (default) samples one population-level ``k`` for
+    all subjects (Hursh's standard practice; pre-registered in
+    ``docs/analysis_plan.md``). The Phase 3 simulations showed that
+    fitting per-subject ``k`` produces an alpha-k identifiability ridge.
+
+    ``arm_index`` (per-subject 0/1) gives a separate ``mu_log_alpha``
+    per arm and exposes ``diff_log_alpha`` as a deterministic. Pass it
+    whenever H3 is being tested; the single-population fit followed by
+    post-hoc subject slicing biases the H3 contrast (see notebook 05).
     """
     n_subj = Q_obs.shape[0]
 
@@ -346,7 +261,7 @@ def fit_demand_hierarchical(
     seed: int = 2025,
     progress_bar: bool = False,
 ) -> az.InferenceData:
-    """Run NUTS on :func:`hierarchical_demand`. Returns InferenceData."""
+    """Run NUTS on :func:`hierarchical_demand`."""
     P_j = jnp.asarray(P, dtype=jnp.float32)
     Q_j = jnp.asarray(Q_obs, dtype=jnp.float32)
     nuts = NUTS(hierarchical_demand)

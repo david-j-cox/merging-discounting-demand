@@ -1,15 +1,10 @@
-"""Functional-form crossover simulation.
+"""Functional-form crossover simulation (CLAUDE.md H2).
 
-CLAUDE.md §4 Phase 3 step 4 / §5 H2: data sampled at narrow effort ranges
-(e.g. 10-60% capability) should fit exponential-like discount functions
-well, while data sampled at wide ranges (10-85%) should require concave
-or capability-bounded forms. The same underlying unified-model truth
-generates both — the difference is purely in *which region* of the
-constraint is sampled.
-
-This module simulates from ``UnifiedCapabilityBounded`` at narrow vs wide
-effort ranges and asks: which single-form discount function wins by AIC
-in each? CLAUDE.md predicts narrow → exponential, wide → power.
+Same unified-model truth, sampled at narrow (10-60% capability) vs
+wide (10-85%) effort ranges. Asks which single-form discount function
+wins by AIC in each. Phase 3 found the original H2 prediction
+(narrow→exponential, wide→power) was too sharp at the population
+level; the convex/concave aggregate is the robust statistic.
 """
 
 from __future__ import annotations
@@ -40,17 +35,7 @@ CONCAVE_FORMS = {"Parabolic", "Power"}
 
 @dataclass(frozen=True)
 class CrossoverResult:
-    """Per-population summary of the crossover simulation.
-
-    Attributes
-    ----------
-    range_label : str
-        ``"narrow"`` or ``"wide"``.
-    best_form_counts : dict[str, int]
-        How many subjects had each discount form win by AIC.
-    n_subjects : int
-        Total subjects in the population.
-    """
+    """Per-population AIC-winner counts for one effort range."""
 
     range_label: str
     best_form_counts: dict[str, int]
@@ -60,14 +45,7 @@ class CrossoverResult:
         return self.best_form_counts.get(form, 0) / self.n_subjects
 
     def fraction_concave(self) -> float:
-        """Fraction of subjects whose AIC-best form is concave (Parabolic, Power).
-
-        The Phase 3 simulations showed that the original H2 prediction
-        (narrow → exponential, wide → power) is too sharp for noisy data
-        with five effort points. The aggregate convex-vs-concave split is
-        the more robust statistic: wide-range data should produce more
-        concave winners than narrow-range data.
-        """
+        """Fraction of subjects whose AIC-best form is concave (Parabolic / Power)."""
         n_concave = sum(self.best_form_counts.get(f, 0) for f in CONCAVE_FORMS)
         return n_concave / self.n_subjects if self.n_subjects > 0 else float("nan")
 
@@ -90,11 +68,7 @@ def crossover_test(
     A: float = 10.0,
     sv_noise_sd: float = 0.5,
 ) -> CrossoverResult:
-    """Simulate effort discounting at the given effort range; return AIC winners.
-
-    For each subject we fit all five candidate single-form discount functions
-    and record which had the lowest AIC.
-    """
+    """Simulate effort discounting at ``effort_fractions``; return per-subject AIC winners."""
     counts: Counter[str] = Counter()
     n_used = 0
     for s in subjects:

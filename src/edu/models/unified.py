@@ -1,40 +1,18 @@
-"""Unified effort-demand model.
+"""Unified effort-demand model. See ``docs/derivation.md``.
 
-Three forms following ``docs/derivation.md``:
+- :class:`UnifiedNaive` (Step 4) — ``SV/A = 10^(k(exp(-alpha*Q0*E/A) - 1))``.
+  Asymptotes to ``A * 10^(-k)``; never reaches zero. Demonstrates why
+  the capability bound is needed.
+- :class:`UnifiedCapabilityBounded` (Step 5, Option B, **preferred**) —
+  adds ``Q2(E) <= B/E``; reaches zero at finite ``E``. ``B`` anchors
+  to measured MVC / N-back capability.
+- :class:`UnifiedNonlinearCost` (Step 5, Option A) — substitutes
+  ``psi(E) = E^s`` for the effort axis. No ``B``; for comparison only.
+- :func:`with_substitutability` — applies Hursh's ``IF`` factor
+  (Step 6): ``Q2_effective = Q2 * (1 - IF * Q1_consumed)``.
 
-:class:`UnifiedNaive`
-    Step 4 of the derivation. ``SV/A = 10^(k(exp(-alpha*Q0*E/A) - 1))``.
-    Asymptotes to ``A * 10^(-k)``; never reaches zero. Useful as a baseline
-    and to demonstrate why the capability bound is needed.
-
-:class:`UnifiedCapabilityBounded`
-    Step 5, **Option B** — preferred. Adds ``Q2(E) <= B/E`` as a physical
-    feasibility constraint. ``SV/A = min[demand-term, B/(Q0 E)]``. Reaches
-    zero at large ``E``. ``value()`` also returns a regime flag.
-
-:class:`UnifiedNonlinearCost`
-    Step 5, **Option A**. Replaces ``E`` with ``psi(E) = E^s`` inside the
-    Hursh-Silberberg exponent. No capability parameter ``B``; does not link
-    to measured MVC / N-back. Implemented for comparison only.
-
-:func:`with_substitutability`
-    Wraps any unified model with the Hursh interaction factor ``IF``
-    (``§3.5`` in CLAUDE.md, ``Step 6`` in the derivation):
-    ``Q2_effective = Q2 * (1 - IF * Q1_consumed)``.
-
-All forms share the parameters ``A`` (reward magnitude), ``Q0``
-(unconstrained demand at zero effort), ``alpha`` (demand decay rate), and
-``k`` (log-span). Option B adds ``B`` (effort capability bound). Option A
-adds ``s`` (effort-cost exponent).
-
-Conventions:
-
-* Effort ``E`` is measured in participant-specific normalised units
-  (typically fraction of MVC or N-back threshold), so ``E ~ 0.1`` to
-  ``1.0`` is the experimental range.
-* The naive form is rotated into ``SV(E)`` space — output is subjective
-  value, not consumption rate. The relationship ``SV/A = Q2/Q0`` is the
-  derivation's A4 mapping.
+Effort ``E`` is in participant-normalised units (E/B fractions). The
+SV-from-demand mapping ``SV/A = Q2/Q0`` is derivation assumption A4.
 """
 
 from __future__ import annotations
@@ -119,11 +97,8 @@ class UnifiedCapabilityBounded(ParametricModel):
             \\frac{B}{Q_0 E}
         \\right]
 
-    The ``B`` parameter is the participant's effort capability — measurable
-    via MVC for physical effort or N-back threshold for cognitive effort.
-    When ``B`` is anchored to that measurement (CLAUDE.md §9), the model
-    becomes identifiable even when ``alpha`` and ``B`` would trade off
-    freely.
+    ``B`` (effort capability) anchors to measured MVC / N-back; this is
+    what makes ``alpha`` and ``B`` jointly identifiable.
     """
 
     param_names: ClassVar[tuple[str, ...]] = ("A", "Q0", "alpha", "k", "B")
@@ -162,19 +137,15 @@ class UnifiedCapabilityBounded(ParametricModel):
     def crossover_effort(
         self, params: dict[str, float] | FloatArray, *, e_max: float = 1e6
     ) -> float:
-        """The first effort ``E* > 0`` at which the capability bound activates.
+        """First ``E* > 0`` where the capability bound activates.
 
-        Solves ``Q0 * 10^(k(exp(-alpha*Q0*E/A) - 1)) = B / E`` numerically.
-        Returns ``nan`` if the capability bound never activates on
-        ``(0, e_max]``.
+        Solves ``Q0 * 10^(k(exp(-alpha*Q0*E/A) - 1)) = B/E`` numerically;
+        returns ``nan`` if it never activates on ``(0, e_max]``.
 
-        The two terms can intersect more than once: the capability term
-        ``B/E`` falls monotonically, but the demand term flattens to a
-        non-zero asymptote ``Q0 * 10^(-k)``. If that asymptote lies above
-        ``B/e_max`` the curves re-cross at large ``E`` (capability re-binds
-        once demand has saturated). The *experimentally relevant* crossover
-        is the first sign change as ``E`` increases from zero — that is the
-        one a participant traverses as effort grows. We return that one.
+        The two terms can re-cross at very large ``E`` because the demand
+        term flattens to a non-zero asymptote ``Q0 * 10^(-k)``. We return
+        the *first* sign change, which is the one a participant traverses
+        as effort grows; the second has no behavioural meaning.
         """
         p = self._coerce_params(params)
         A, Q0, alpha, k, B = p
@@ -249,31 +220,12 @@ def with_substitutability(
     interaction_factor: float,
     q1_consumed: ArrayLike | float,
 ) -> FloatArray:
-    """Apply Hursh's interaction-factor scaling to a unified-model output.
+    """Apply Hursh's interaction-factor scaling: ``SV * (1 - IF * Q1_consumed)``.
 
-    ``Q2_effective(E) = Q2(E) * (1 - IF * Q1_consumed)``.
-
-    The wrapper is exposed as a function rather than a class because ``IF``
-    and ``Q1_consumed`` are *experimental* quantities (assigned by arm or
-    measured per trial) rather than free model parameters. Letting the
-    fitter touch ``IF`` would conflate the manipulation we're trying to
-    test with the model that interprets it.
-
-    Parameters
-    ----------
-    base
-        Any :class:`ParametricModel` (typically a Unified* class).
-    params
-        Parameter dict / vector for ``base``.
-    effort
-        Effort levels at which to evaluate.
-    interaction_factor
-        ``IF`` ∈ ``[0, 1]``. ``0`` is independence, ``1`` is perfect
-        substitutes. Held fixed by the experimenter.
-    q1_consumed
-        Consumption of the effortless commodity. Scalar (constant across
-        trials) or array (per trial). Should be normalised to lie in
-        ``[0, 1]`` so the bracketed factor stays in ``[0, 1]``.
+    ``IF`` (in ``[0, 1]``) is held fixed by the experimenter — it's the
+    arm-assigned manipulation we're testing, not a free model parameter
+    — so this is a function over ``base`` rather than a class with state.
+    ``q1_consumed`` should be normalised to ``[0, 1]``.
     """
     if not 0.0 <= interaction_factor <= 1.0:
         msg = f"IF must lie in [0, 1], got {interaction_factor}"

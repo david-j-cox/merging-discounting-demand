@@ -1,19 +1,14 @@
 """Behavioural-economic demand-curve models.
 
-Two parameterisations are implemented:
+:class:`HurshSilberberg` — Hursh & Silberberg (2008) exponential form,
+log-space; cannot represent zero consumption.
+:class:`Koffarnus` — Koffarnus et al. (2015) exponentiated form;
+mathematically equivalent for ``Q > 0`` but admits exact zeros and is
+the pre-registered default.
 
-:class:`HurshSilberberg`
-    The original Hursh & Silberberg (2008) exponential model in log-Q space.
-    Cannot represent zero consumption directly because ``log10(0) = -inf``.
-
-:class:`Koffarnus`
-    The Koffarnus, Franck, Stein & Bickel (2015) "exponentiated" form. Maps
-    naturally onto Q in linear units and handles zero consumption. Default
-    choice for new fits per CLAUDE.md §3.2.
-
-Both share the parameters ``Q0``, ``alpha``, ``k`` and the closed-form
-:meth:`Pmax`/:meth:`Omax` quantities derived in Gilroy, Kaplan, Reed, Hantula
-& Hursh (2019).
+Both expose ``Q0``, ``alpha``, ``k`` and the closed-form
+:class:`DemandDerived` (Pmax via the Gilroy et al. 2019 Lambert-W
+solution, plus Omax and essential value).
 """
 
 from __future__ import annotations
@@ -33,16 +28,9 @@ from edu.models._base import FitResult, FloatArray, ParametricModel
 class DemandDerived:
     """Closed-form derived quantities from a fitted demand curve.
 
-    Attributes
-    ----------
-    Pmax : float
-        Price at unit elasticity. Where consumption transitions from inelastic
-        to elastic. Computed via the Gilroy et al. (2019) Lambert-W solution.
-    Omax : float
-        Maximum total expenditure ``Pmax * Q(Pmax)``.
-    essential_value : float
-        Hursh's :math:`EV \\propto 1 / (\\alpha \\cdot k^{1.5})`. Reported in
-        relative units (proportionality constant set to 1).
+    ``Pmax`` (price at unit elasticity) via Gilroy et al. (2019),
+    ``Omax = Pmax * Q(Pmax)``, and Hursh's essential value
+    :math:`EV \\propto 1 / (\\alpha k^{1.5})` (proportionality 1).
     """
 
     Pmax: float
@@ -59,15 +47,12 @@ _LN10 = float(np.log(10.0))
 
 
 def _pmax_lambert(alpha: float, Q0: float, k: float) -> float:
-    """Closed-form Pmax from Gilroy, Kaplan, Reed, Hantula & Hursh (2019).
+    """Closed-form Pmax via Gilroy et al. (2019).
 
-    At unit elasticity ``alpha * Q0 * P * k * ln(10) * exp(-alpha * Q0 * P) = 1``.
-    Letting ``u = alpha * Q0 * P`` rearranges to ``-u * exp(-u) = -1 / (k * ln 10)``,
-    whose solution is ``u = -W_{-1}(-1 / (k * ln 10))``.
-
-    The lower branch of the Lambert-W function is required; the principal
-    branch ``W_0`` gives the trivial solution at the inelastic side of the
-    curve.
+    Unit elasticity reduces to ``-u exp(-u) = -1/(k ln10)`` with
+    ``u = alpha * Q0 * P``; solution is ``u = -W_{-1}(-1/(k ln10))``,
+    requiring the *lower* branch of Lambert W (W_0 gives the trivial
+    inelastic-side root).
     """
     arg = -1.0 / (k * _LN10)
     # W_{-1} is real for arg in [-1/e, 0); k * ln10 > 1/e is satisfied by any
@@ -90,22 +75,10 @@ class HurshSilberberg(ParametricModel):
 
         \\log_{10} Q = \\log_{10} Q_0 + k \\bigl(\\exp(-\\alpha Q_0 P) - 1\\bigr)
 
-    Parameters
-    ----------
-    Q0 : float
-        Demand at zero price. Must be positive.
-    alpha : float
-        Rate-of-change-in-elasticity parameter. Smaller values indicate more
-        inelastic (essential) commodities. Must be positive.
-    k : float
-        Span of the consumption data in :math:`\\log_{10}` units. Often fixed
-        across subjects in published work; here it is a free parameter
-        unless held constant by passing a fixed value to :meth:`fit`.
-
-    Notes
-    -----
-    Returns ``Q``, not ``log10(Q)``. Callers fitting in log-space should
-    transform externally; the test suite covers both modes.
+    All parameters are positive. ``alpha`` is the rate-of-change-in-
+    elasticity (smaller = more essential); ``k`` the log10 span of the
+    consumption data (typically held constant per the analysis plan).
+    :meth:`value` returns ``Q``, not ``log10(Q)``.
     """
 
     param_names: ClassVar[tuple[str, ...]] = ("Q0", "alpha", "k")
@@ -151,25 +124,7 @@ class HurshSilberberg(ParametricModel):
         bounds: tuple[dict[str, float], dict[str, float]] | None = None,
         fixed: dict[str, float] | None = None,
     ) -> FitResult:
-        """Fit by nonlinear least squares.
-
-        Parameters
-        ----------
-        prices, consumption
-            Observed price array and corresponding consumption.
-        log_space
-            When ``True`` (default) fit residuals on ``log10(Q)``, which is
-            the convention in the Hursh literature and stabilises the fit
-            when consumption spans orders of magnitude.
-        x0
-            Starting values keyed by parameter name. Any omitted parameters
-            are auto-initialised from the data.
-        bounds
-            ``(lower, upper)`` dicts. Parameters not listed get sensible
-            defaults (positivity, reasonable ranges).
-        fixed
-            Parameters to hold constant during the fit.
-        """
+        """Fit by NLS. ``log_space=True`` (default) is the Hursh convention."""
         return _fit_demand(
             self,
             prices,
@@ -187,15 +142,14 @@ class HurshSilberberg(ParametricModel):
 
 
 class Koffarnus(ParametricModel):
-    """Koffarnus, Franck, Stein & Bickel (2015) exponentiated demand.
+    """Koffarnus et al. (2015) exponentiated demand.
 
     .. math::
 
         Q = Q_0 \\cdot 10^{k(\\exp(-\\alpha Q_0 P) - 1)}
 
-    Mathematically equivalent to :class:`HurshSilberberg` for ``Q > 0`` but
-    handles zero consumption naturally because the exponentiation never
-    diverges. CLAUDE.md §3.2 specifies this as the default for new fits.
+    Mathematically equivalent to :class:`HurshSilberberg` for ``Q > 0``
+    but admits exact zeros. The pre-registered default for new fits.
     """
 
     param_names: ClassVar[tuple[str, ...]] = ("Q0", "alpha", "k")
@@ -232,13 +186,7 @@ class Koffarnus(ParametricModel):
         bounds: tuple[dict[str, float], dict[str, float]] | None = None,
         fixed: dict[str, float] | None = None,
     ) -> FitResult:
-        """Fit by nonlinear least squares.
-
-        Defaults to linear-space residuals so that zero-consumption
-        observations can participate in the fit; pass ``log_space=True`` to
-        match the Hursh-Silberberg convention (in which case all observations
-        must be strictly positive).
-        """
+        """Fit by NLS. Default linear-space residuals admit zero consumption."""
         return _fit_demand(
             self,
             prices,

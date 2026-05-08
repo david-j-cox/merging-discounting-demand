@@ -1,20 +1,7 @@
 /**
- * Data export pipeline.
- *
- * Two channels:
- *
- *  1. **DataPipe** (https://pipe.jspsych.org). Posts the session JSON to a
- *     DataPipe experiment which forwards it to OSF. Configuration constants
- *     live in `config.ts`. The plugin handles network detail; we wrap it
- *     so that failures don't drop data.
- *  2. **Local download** as a JSON file. Always offered as a fallback if
- *     the DataPipe POST fails or the participant is running locally
- *     (e.g. during piloting). This guarantees no data loss even if the
- *     OSF integration is misconfigured.
- *
- * The export wraps the per-task results (calibration, Task 1, Task 2,
- * Task 3) plus randomization into a single JSON payload tagged with the
- * study version and a random session UUID.
+ * Data export pipeline. Two channels: DataPipe POST (forwards to OSF)
+ * with a local-JSON-download fallback. The fallback runs whenever the
+ * POST fails or the DataPipe ID is the placeholder, so no data is lost.
  */
 
 import jsPsychPipe from "@jspsych-contrib/plugin-pipe";
@@ -47,25 +34,19 @@ export interface SessionPayload {
   rawTrials: unknown;
 }
 
-/**
- * RFC4122-ish v4 UUID via crypto.randomUUID where available, with a
- * fallback that uses Math.random for very old browsers (negligible in
- * practice but cheap to support).
- */
+/** v4 UUID (or Math.random fallback for browsers without crypto.randomUUID). */
 export function newSessionId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }
-  // Fallback: not cryptographically random, but unique enough for an ID.
-  const hex = (n: number) => Math.floor(Math.random() * 16 ** n)
-    .toString(16)
-    .padStart(n, "0");
+  const hex = (n: number) =>
+    Math.floor(Math.random() * 16 ** n)
+      .toString(16)
+      .padStart(n, "0");
   return `${hex(8)}-${hex(4)}-${hex(4)}-${hex(4)}-${hex(12)}`;
 }
 
-/**
- * Build the payload object from per-task results.
- */
+/** Combine per-task results into the session JSON payload. */
 export function buildPayload(args: {
   randomization: RandomizationAssignment;
   calibration: CalibrationResult;
@@ -91,16 +72,9 @@ export function buildPayload(args: {
   };
 }
 
-/**
- * Build the jsPsych timeline trial that POSTs the payload to DataPipe.
- *
- * Returns a trial object compatible with jsPsych 8. If
- * `DATAPIPE_EXPERIMENT_ID` is the placeholder, the trial is skipped
- * (development mode).
- */
+/** jsPsych trial that POSTs to DataPipe; returns ``null`` when the ID is unset. */
 export function buildDataPipeTrial(payload: SessionPayload): unknown {
   if (DATAPIPE_EXPERIMENT_ID === "PLACEHOLDER_BEFORE_PILOT") {
-    // No-op trial: print a warning to console so devs notice.
     console.warn(
       "[dataExport] DATAPIPE_EXPERIMENT_ID is a placeholder; not posting to DataPipe.",
     );
@@ -116,10 +90,7 @@ export function buildDataPipeTrial(payload: SessionPayload): unknown {
   };
 }
 
-/**
- * Trigger a local JSON download in the browser. Fallback path if the
- * DataPipe POST fails or the experimenter is running offline.
- */
+/** Trigger a local JSON download. Fallback when the DataPipe POST fails. */
 export function downloadPayloadAsJson(payload: SessionPayload): void {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json",
@@ -134,10 +105,7 @@ export function downloadPayloadAsJson(payload: SessionPayload): void {
   URL.revokeObjectURL(url);
 }
 
-/**
- * Read the Prolific ID from URL query parameters. Prolific routes
- * participants to the experiment with `?PROLIFIC_PID=...`.
- */
+/** Read ``?PROLIFIC_PID=...`` from the URL (Prolific's standard routing). */
 export function readProlificId(): string | null {
   if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);

@@ -1,18 +1,9 @@
 """Per-subject summaries from a hierarchical Bayesian fit.
 
-The hierarchical fit returns posterior samples for ``alpha``, ``Q0``,
-``k_subj`` (or ``k_shared``) per subject. This module collapses those to
-the summary statistics secondary analyses need:
-
-- Posterior mean and 95% HDI for ``alpha`` per subject.
-- The model-implied effort-discount steepness ``lambda`` per subject,
-  computed from the per-subject demand parameters via the linearised
-  unconstrained-regime approximation.
-- Per-subject crossover effort ``E*`` from the unified-model
-  capability bound.
-
-These outputs feed directly into :mod:`edu.analysis.group` for H1-
-stronger correlation and H3 contrast tests.
+Collapses ``alpha``, ``Q0``, ``k`` posterior samples into per-subject
+mean/HDI, the model-implied unconstrained-regime steepness
+``lambda = alpha * Q0 * k * ln 10 / A``, and the unified-model
+crossover effort ``E*``. Feeds :mod:`edu.analysis.group`.
 """
 
 from __future__ import annotations
@@ -34,27 +25,10 @@ _LN10 = float(np.log(10.0))
 class SubjectSummary:
     """Per-subject collapse of a hierarchical posterior.
 
-    Attributes
-    ----------
-    alpha_mean, alpha_hdi
-        Posterior mean and 95% HDI for ``alpha``.
-    Q0_mean, Q0_hdi
-        Posterior mean and 95% HDI for ``Q0``.
-    k_value
-        ``k`` value used by the fit. With ``share_k=True`` (the
-        pre-registered default), this is one population-level value
-        repeated; with ``share_k=False``, it is the per-subject posterior
-        mean of ``k_subj``.
-    lambda_unconstrained_mean
-        Model-implied unconstrained-regime steepness
-        ``alpha * Q0 * k * ln(10) / A``. Posterior mean.
-    crossover_mean
-        Posterior mean of the unified-model crossover effort ``E*``,
-        computed by evaluating the closed-form crossover at each
-        posterior draw and averaging. ``nan`` if the capability bound
-        never activates for a given draw and that's the modal case.
-    n_draws
-        Number of posterior draws used in the summary.
+    ``k_value`` is the population-level ``k`` for the share_k=True fit
+    (pre-registered default) or the per-subject posterior mean
+    otherwise. ``crossover_mean`` is averaged over draws and is ``nan``
+    when the capability bound never activates.
     """
 
     alpha_mean: float
@@ -90,18 +64,10 @@ def summarise_subjects(
     A: float = 10.0,
     B_anchor: FloatArray | None = None,
 ) -> list[SubjectSummary]:
-    """Collapse the hierarchical posterior into a list of per-subject summaries.
+    """One ``SubjectSummary`` per subject from a hierarchical posterior.
 
-    Parameters
-    ----------
-    idata
-        Output of :func:`edu.fitting.bayesian.fit_unified_hierarchical`.
-    A
-        Reward magnitude used in the fit (matches the design constant).
-    B_anchor
-        Per-subject capability values, shape ``(n_subjects,)``. Required
-        to compute the crossover ``E*``. If ``None``, ``crossover_mean``
-        is set to ``nan`` for every subject.
+    ``B_anchor`` (per-subject capability) is required to compute the
+    crossover ``E*``; without it ``crossover_mean`` is ``nan``.
     """
     alpha_samples = _stack_samples(idata, "alpha")  # (n_draws, n_subj)
     Q0_samples = _stack_samples(idata, "Q0")

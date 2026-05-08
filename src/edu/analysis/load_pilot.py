@@ -1,16 +1,10 @@
-"""Load DataPipe / Phase 4 JSON payloads into the analysis-ready arrays.
+"""Load DataPipe / Phase 4 JSON payloads into analysis-ready matrices.
 
-A single experiment session produces one JSON file matching the
-``SessionPayload`` shape declared in
-``experiment/src/lib/dataExport.ts``. This module reads a directory of
-those files, validates the schema, and assembles them into the
-``(P, Q_obs, E, SV_obs, B_anchor, arm)`` matrices the Bayesian fitter
-expects.
-
-The loader is intentionally permissive on unexpected fields (forward
-compatibility with future experiment versions) but strict on the fields
-the analysis depends on. Validation failures raise ``InvalidPayload``
-with a path identifying the offending file.
+Reads session JSONs (schema in ``experiment/src/lib/dataExport.ts``),
+validates the fields the Bayesian fitter needs, and stacks them into
+``(P, Q_obs, E, SV_obs, B_anchor, arm)``. Unknown extra fields are
+preserved on ``LoadedSession.raw`` for forward compatibility;
+validation failures raise :class:`InvalidPayload` with the source path.
 """
 
 from __future__ import annotations
@@ -47,25 +41,12 @@ class LoadedSession:
 
 @dataclass(frozen=True)
 class LoadedCohort:
-    """All sessions assembled into matrices for the Bayesian fitter.
+    """Stacked cohort matrices for the Bayesian fitter.
 
-    Attributes
-    ----------
-    sessions : list[LoadedSession]
-        One entry per loaded subject, in load order.
-    P : ndarray, shape (n_prices,)
-        Shared price array. Verified identical across sessions; raises
-        ``InvalidPayload`` if any session disagrees.
-    Q_obs : ndarray, shape (n_subj, n_prices)
-        Stacked consumption matrix.
-    E : ndarray, shape (n_subj, n_effort)
-        Stacked effort matrix (in absolute units).
-    SV_obs : ndarray, shape (n_subj, n_effort)
-        Stacked SV matrix.
-    B_anchor : ndarray, shape (n_subj,)
-        Per-subject p_max values (the analog of B in the model).
-    arm : ndarray of str, shape (n_subj,)
-        Arm assignment per subject.
+    Shapes: ``P`` ``(n_prices,)``; ``Q_obs`` ``(n_subj, n_prices)``;
+    ``E``, ``SV_obs`` ``(n_subj, n_effort)``; ``B_anchor`` ``(n_subj,)``;
+    ``arm`` ``(n_subj,)`` of ``"low"``/``"high"``. The price array must
+    be identical across sessions (assembly raises otherwise).
     """
 
     sessions: list[LoadedSession]
@@ -143,16 +124,7 @@ def parse_session(payload: dict[str, Any], *, source: str = "<dict>") -> LoadedS
 
 
 def load_directory(path: Path | str, *, pattern: str = "*.json") -> LoadedCohort:
-    """Load every ``*.json`` in ``path``, parse, validate, and stack.
-
-    Parameters
-    ----------
-    path
-        Directory containing session JSON files. Typically
-        ``data/raw/`` for pilot data or a per-cohort subdirectory.
-    pattern
-        Glob pattern; defaults to ``*.json``.
-    """
+    """Load, parse, and stack every ``*.json`` in ``path`` (typically ``data/raw/``)."""
     p = Path(path)
     if not p.is_dir():
         msg = f"Not a directory: {p}"

@@ -1,21 +1,10 @@
 /**
- * Randomization for the experimental battery.
+ * Per-subject randomization. Two factors:
  *
- * Two factors per CLAUDE.md §4 Phase 4 step 6:
+ * - Substitutability arm (between-subjects 50/50, the H3 manipulation).
+ * - Task order — uniform over the 6 permutations of the three tasks.
  *
- *  - **Substitutability arm** (between-subjects, 50/50): low vs high.
- *    Determines whether the immediate-reward option in Task 2's titration
- *    is framed as a substitute commodity (high-IF arm) or an unrelated
- *    commodity (low-IF arm). Pre-registered as the H3 manipulation.
- *  - **Task order** (within-subjects): a Latin-square-style permutation
- *    of {Task 1, Task 2, Task 3} per subject so order effects average out.
- *    Six orderings exist for three tasks; the assignment cycles through
- *    them in a deterministic-by-seed manner.
- *
- * The randomizer is seedable so the unit tests and the E2E test can run
- * with reproducible assignments. In production we seed from
- * `Date.now() ^ navigator.userAgent.length` to get effectively-random
- * but auditable assignments.
+ * Seedable so tests run reproducibly.
  */
 
 export type SubstitutabilityArm = "low" | "high";
@@ -54,11 +43,7 @@ const TASK_PERMUTATIONS: TaskName[][] = (() => {
   return perms;
 })();
 
-/**
- * Mulberry32: tiny seedable PRNG. Returns a function that yields uniform
- * doubles in [0, 1). Identical seed -> identical sequence; this is the
- * property the test suite relies on.
- */
+/** Mulberry32: tiny seedable PRNG yielding uniform doubles in [0, 1). */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
@@ -70,13 +55,7 @@ export function mulberry32(seed: number): () => number {
   };
 }
 
-/**
- * Assign a participant to an arm and a task order.
- *
- * `seed` is a 32-bit integer. The arm is `low` if the first random draw
- * is < 0.5 and `high` otherwise. The task order is the
- * `floor(rng() * 6)`-th permutation.
- */
+/** Assign one participant from a 32-bit integer seed. */
 export function randomize(seed: number): RandomizationAssignment {
   const rng = mulberry32(seed);
   const arm: SubstitutabilityArm = rng() < 0.5 ? "low" : "high";
@@ -85,11 +64,7 @@ export function randomize(seed: number): RandomizationAssignment {
   return { arm, taskOrder: [...taskOrder], seed };
 }
 
-/**
- * Generate a default seed from current time and a small entropy source.
- * Deterministic given the same `now` and `salt`; replace in tests by
- * passing a fixed seed to `randomize` directly.
- */
+/** Default seed from current time + a salt; deterministic given fixed inputs (for tests). */
 export function defaultSeed(now: number = Date.now(), salt: number = 0): number {
   return ((now ^ (salt * 2654435761)) >>> 0) | 0;
 }

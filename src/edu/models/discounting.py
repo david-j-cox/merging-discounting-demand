@@ -1,11 +1,7 @@
 """Effort-discount models with a shared interface.
 
-Six discount functions from the effort-discounting literature, all expressed
-as :math:`SV(E)` where ``SV`` is subjective value, ``E`` is effort (in
-participant-specific normalised units, typically fraction of MVC or N-back
-threshold), and ``A`` is the unconstrained reward magnitude.
-
-Functional forms (CLAUDE.md §3.3):
+Six discount functions, all ``SV(E)`` with reward magnitude ``A`` and
+effort ``E`` in normalised units (fraction of MVC or N-back threshold).
 
 ================  ================================  ============================
 class             :math:`SV(E)`                     reference
@@ -18,19 +14,11 @@ Sigmoidal         :math:`A / (1 + \\exp(s(E - E_0)))` Klein-Flügge et al. 2015
 Hyperboloid       :math:`A / (1 + l E)^s`           Rachlin / Myerson-Green
 ================  ================================  ============================
 
-The parabolic and power forms are *subtractive*: ``SV`` can drop below zero
-mathematically. The :meth:`value` methods clamp the output at zero because
-subjective value below zero has no behavioural meaning (a participant cannot
-be willing to pay to *avoid* a reward they would otherwise accept).
+Subtractive forms (Parabolic, Power) can dip below zero mathematically;
+:meth:`value` clamps at 0 since negative SV is not behaviourally meaningful.
 
-Conventions:
-
-* ``A`` is the maximum reward (always free, positive).
-* ``l`` (the "lambda" steepness) is positive across all multiplicative forms;
-  larger values mean steeper discounting.
-* ``s`` differs by form: a power exponent for Power and Hyperboloid, a slope
-  parameter for Sigmoidal. Each docstring is explicit.
-* ``E0`` (Sigmoidal only) is the inflection point.
+The ``s`` parameter is a *power exponent* in Power and Hyperboloid but
+a *slope* in Sigmoidal — see each class docstring.
 """
 
 from __future__ import annotations

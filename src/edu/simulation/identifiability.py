@@ -1,19 +1,13 @@
 """Identifiability checks via profile likelihoods.
 
-For each pair of parameters, fix them on a 2D grid and reoptimise the
-remaining free parameters. Plot the resulting NLL surface; pathological
-identifiability shows up as a flat ridge along the grid.
+For each parameter pair, fix on a 2D grid and reoptimise the rest;
+pathological identifiability shows as a flat ridge.
 
-CLAUDE.md §4 Phase 3 step 2 specifies this check explicitly: *"If any pair
-shows a flat ridge in the likelihood surface, the model is not identifiable
-and the experiment as designed cannot test it."*
+Implemented pairs:
 
-We focus on the pairs the recovery experiment flagged as worth checking:
-
-* ``(alpha, k)`` — known-suspect from the demand literature; recovery
-  with free k showed 57% RMSE on alpha, suggestive of a ridge.
-* ``(alpha, B)`` — the unified-model pair where capability and demand
-  decay both scale SV.
+- ``(alpha, k)`` — flagged by the recovery sweep (57% RMSE on alpha
+  with free k).
+- ``(alpha, B)`` — both scale SV in the unified model.
 """
 
 from __future__ import annotations
@@ -61,11 +55,10 @@ def profile_alpha_k_demand(
     k_grid: FloatArray | None = None,
     log_noise_sd: float = 0.10,
 ) -> ProfileResult:
-    """Profile the negative log-likelihood over (alpha, k) for one subject.
+    """Profile RSS over (alpha, k) for one subject's purchase-task data.
 
-    For each ``(alpha_i, k_j)`` on the grid we fix those values and refit
-    ``Q0`` only, then record the residual sum of squares as a proxy for NLL
-    (Gaussian, profiled variance).
+    Uses RSS as a proxy for NLL (Gaussian, profiled variance); the
+    ridge-vs-no-ridge structure is preserved either way.
     """
     P, Q = simulate_purchase_task(subject, rng=rng, log_noise_sd=log_noise_sd)
     ko = Koffarnus()
@@ -80,14 +73,9 @@ def profile_alpha_k_demand(
         for j, k in enumerate(k_grid):
             try:
                 fit = ko.fit(P, Q, fixed={"alpha": float(alpha), "k": float(k)})
-                nll[i, j] = -fit.log_likelihood_at_fit()  # type: ignore[attr-defined]
-            except (ValueError, RuntimeError, AttributeError):
-                # FitResult doesn't expose log_likelihood directly; use rss.
-                try:
-                    fit = ko.fit(P, Q, fixed={"alpha": float(alpha), "k": float(k)})
-                    nll[i, j] = float(fit.rss)
-                except (ValueError, RuntimeError, np.linalg.LinAlgError):
-                    continue
+                nll[i, j] = float(fit.rss)
+            except (ValueError, RuntimeError, np.linalg.LinAlgError):
+                continue
 
     return ProfileResult(
         p1_name="alpha",
@@ -116,9 +104,8 @@ def profile_alpha_B_unified(
 ) -> ProfileResult:
     """Profile NLL over (alpha, B) for the unified joint-task fit.
 
-    For each grid point we fix ``alpha`` and ``B`` and refit ``Q0`` and
-    ``k`` against the joint purchase + effort-discount data. The grid
-    spans ~3x around the truth on each axis.
+    Fixes ``alpha, B`` and refits ``Q0, k`` against the joint
+    purchase + effort-discount data per grid point.
     """
     purchase = simulate_purchase_task(subject, rng=rng, log_noise_sd=log_noise_sd)
     effort = simulate_effort_discounting(subject, rng=rng, A=A, sv_noise_sd=sv_noise_sd)
@@ -178,12 +165,10 @@ def profile_alpha_B_unified(
 
 
 def ridge_score(profile: ProfileResult, *, threshold_pct: float = 1.0) -> float:
-    """Return the fraction of grid points within ``threshold_pct`` of the minimum NLL.
+    """Fraction of grid points within ``threshold_pct`` of the minimum NLL.
 
-    A well-identified pair has the minimum at one (or a few neighbouring)
-    grid points, so the score is small. A pathological ridge fills a sizeable
-    fraction of the grid, pushing the score toward 1. CLAUDE.md §4 Phase 3
-    step 2: large ridge ⇒ unidentifiable.
+    Small for well-identified pairs (minimum at one cell); near 1 for
+    pathological ridges that fill the grid.
     """
     valid = np.isfinite(profile.nll)
     if not valid.any():

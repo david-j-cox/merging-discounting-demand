@@ -1,38 +1,21 @@
 /**
- * Adjusting-amount titration (Du, Green & Myerson 2002).
+ * Du, Green & Myerson (2002) adjusting-amount titration.
  *
- * Used to find each subject's indifference reward (subjective value, SV) at
- * a given effort level. Standard procedure:
- *
- *   - Start with the immediate reward equal to half the maximum.
- *   - On each step, ask: "Would you do <effortful option> for $X, or take
- *     $immediate now?"
- *   - If they pick the effortful option, the immediate amount was too low;
- *     raise it by half the previous adjustment.
- *   - If they pick the immediate option, the immediate amount was too high;
- *     lower it by half the previous adjustment.
- *   - After `TITRATION_STEPS` steps, the indifference value is the immediate
- *     amount that would have been offered on the (n+1)-th step.
- *
- * The algorithm is deterministic given the choice sequence; we expose a pure
- * function `nextOffer` plus a stateful `Titrator` so the orchestration code
- * can drive it from jsPsych one trial at a time.
+ * Halving-step bisection: start at `rewardMax / 2`, adjust by half the
+ * previous step toward (effortful chosen) or away from (immediate chosen)
+ * the effortful option. After `TITRATION_STEPS` choices the indifference
+ * estimate is the offer that would be presented next.
  */
 
 import { REWARD_MAX_USD, TITRATION_STEPS } from "../config";
 
 /** A single titration step: what was offered, what the subject chose. */
 export interface TitrationStep {
-  /** Step index, 0-based. Total step count is `TITRATION_STEPS`. */
+  /** Step index, 0-based; total step count is `TITRATION_STEPS`. */
   step: number;
   /** Immediate-reward amount offered on this step (USD). */
   offer: number;
-  /**
-   * Subject's choice on this step.
-   *
-   *  - `"immediate"` — they chose the immediate (effortless) reward.
-   *  - `"effortful"` — they chose the effortful option.
-   */
+  /** `"immediate"` chose the effortless option; `"effortful"` chose the effortful one. */
   choice: "immediate" | "effortful";
 }
 
@@ -45,18 +28,9 @@ export interface TitrationResult {
   rewardMax: number;
 }
 
-/**
- * Compute the offer for the next step from the history so far.
- *
- * If `history` is empty, return the starting offer (`rewardMax / 2`).
- *
- * @param history All steps completed so far, in order.
- * @param rewardMax The bracket maximum (typically `REWARD_MAX_USD`).
- */
+/** Next offer from history; ``rewardMax / 2`` when history is empty. */
 export function nextOffer(history: TitrationStep[], rewardMax: number = REWARD_MAX_USD): number {
   if (history.length === 0) return rewardMax / 2;
-  // Standard halving-step rule: each adjustment is half the previous.
-  // Starting adjustment magnitude on step 1 is `rewardMax / 4`.
   const lastStep = history[history.length - 1] as TitrationStep;
   const adjustment = rewardMax / 2 ** (history.length + 1);
   return lastStep.choice === "effortful"
@@ -64,11 +38,7 @@ export function nextOffer(history: TitrationStep[], rewardMax: number = REWARD_M
     : lastStep.offer - adjustment;
 }
 
-/**
- * Stateful driver. Call `nextOffer()` to get the next amount to display,
- * then `record(choice)` to commit the subject's response. Stops automatically
- * after `TITRATION_STEPS` steps.
- */
+/** Stateful driver: ``nextOffer()`` to peek, ``record(choice)`` to advance. */
 export class Titrator {
   private readonly history: TitrationStep[] = [];
 
@@ -120,13 +90,7 @@ export class Titrator {
   }
 }
 
-/**
- * Convenience: run a titration to completion against an arbitrary chooser
- * function. Useful for E2E testing with simulated subjects.
- *
- * @param chooseFn A function that, given the current offer, returns the
- *   subject's choice. (Typically a smooth function of `offer / true_SV`.)
- */
+/** Run a titration to completion against a chooser; useful for E2E tests. */
 export function simulate(
   chooseFn: (offer: number) => "immediate" | "effortful",
   rewardMax: number = REWARD_MAX_USD,

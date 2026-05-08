@@ -1,17 +1,8 @@
 """Synthetic-data generators for the simulation suite.
 
-Sample subject-level parameters from realistic priors and produce the three
-task datasets the Phase 4 experiment will collect (CLAUDE.md §4):
-
-1. **Standard purchase task** — 17-price array, demand-curve fit yields
-   subject-level ``alpha``, ``Q0``, ``k``.
-2. **Effort discounting** — six effort levels (10/25/40/55/70/85% of
-   capability), titrated SV via adjusting-amount procedure.
-3. **Effort purchase task** — novel; price array in effort units, fixed
-   reward, returns "how many effort units would you perform" answers.
-
-All generators take an explicit ``np.random.Generator`` so simulations are
-reproducible from a single seed.
+Subject populations from log-normal priors plus generators for each of
+the three Phase 4 tasks (purchase, effort-discounting, effort-purchase).
+All take an explicit ``np.random.Generator``.
 """
 
 from __future__ import annotations
@@ -35,15 +26,11 @@ FloatArray = NDArray[np.floating[Any]]
 
 @dataclass(frozen=True)
 class SubjectParams:
-    """Per-subject parameters for the unified capability-bounded model.
-
-    All fields are scalar. The simulation code holds a list/array of these
-    when running across many subjects.
-    """
+    """Per-subject parameters for the unified capability-bounded model."""
 
     alpha: float  # demand decay rate
     Q0: float  # demand at zero price
-    k: float  # log-span (often shared)
+    k: float  # log-span (held constant across subjects in fits)
     B: float  # effort capability (anchored to measured MVC in real data)
 
 
@@ -60,12 +47,7 @@ def sample_population(
     B_loc: float = 0.0,  # log10 mean ~ 1.0 (effort-units; arbitrary scale)
     B_scale: float = 0.4,
 ) -> list[SubjectParams]:
-    """Sample ``n`` subjects from log-normal priors on each parameter.
-
-    Defaults span the realistic range described in CLAUDE.md §3 (k ~ 2-4,
-    α ~ 0.001-0.1) plus a B distribution centred at unity. Tune via the
-    keyword args from a YAML config when running the suite.
-    """
+    """Sample ``n`` subjects from log-normal priors. Defaults match k~2-4, α~0.001-0.1."""
     log_alpha = rng.normal(alpha_loc, alpha_scale, size=n)
     log_Q0 = rng.normal(Q0_loc, Q0_scale, size=n)
     log_B = rng.normal(B_loc, B_scale, size=n)
@@ -118,14 +100,7 @@ def simulate_purchase_task(
     prices: FloatArray = PRICE_ARRAY_17,
     log_noise_sd: float = 0.10,
 ) -> tuple[FloatArray, FloatArray]:
-    """Generate one subject's purchase-task consumption data.
-
-    Uses the Koffarnus exponentiated form (handles zero consumption) with
-    multiplicative log-normal noise — the canonical noise model in the
-    behavioural-economic demand literature.
-
-    Returns ``(prices, consumption)``.
-    """
+    """One subject's purchase-task ``(prices, Q)`` with multiplicative log-normal noise."""
     ko = Koffarnus()
     Q_clean = ko.value({"Q0": subject.Q0, "alpha": subject.alpha, "k": subject.k}, prices)
     noise = rng.normal(0.0, log_noise_sd, size=prices.shape)
@@ -151,14 +126,10 @@ def simulate_effort_discounting(
     effort_fractions: FloatArray = EFFORT_FRACTIONS_DEFAULT,
     sv_noise_sd: float = 0.5,
 ) -> tuple[FloatArray, FloatArray]:
-    """Generate one subject's effort-discounting SV at each effort level.
+    """One subject's effort-discounting ``(E, SV)``.
 
-    The ``effort_fractions`` are interpreted as fractions of the subject's
-    capability ``B`` — so the actual effort axis is ``f * B``. This matches
-    the experimental procedure where each subject's effort grid is scaled
-    by their own MVC / N-back threshold.
-
-    Returns ``(effort_array, sv_array)`` where effort is in absolute units.
+    ``effort_fractions`` are fractions of ``subject.B``; the returned
+    effort axis is ``f * B`` (absolute units). SV is clipped at 0.
     """
     m = UnifiedCapabilityBounded()
     effort = effort_fractions * subject.B
@@ -192,16 +163,7 @@ def simulate_effort_purchase_task(
     effort_prices: FloatArray = EFFORT_PRICE_DEFAULT,
     log_noise_sd: float = 0.15,
 ) -> tuple[FloatArray, FloatArray]:
-    """Generate one subject's effort-purchase-task data.
-
-    Each "price" is an effort cost per acquisition; the dependent
-    measure is how many acquisitions the subject reports they would
-    make. Consumption follows Koffarnus demand:
-
-        Q(P_effort) = Q0 * 10^(k(exp(-alpha*Q0*P_effort) - 1))
-
-    Returns ``(effort_prices, consumption)``.
-    """
+    """One subject's effort-purchase-task ``(P_effort, Q)`` via Koffarnus demand."""
     ko = Koffarnus()
     Q_clean = ko.value({"Q0": subject.Q0, "alpha": subject.alpha, "k": subject.k}, effort_prices)
     noise = rng.normal(0.0, log_noise_sd, size=effort_prices.shape)

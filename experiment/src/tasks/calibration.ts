@@ -1,29 +1,17 @@
 /**
- * Key-press calibration task (Phase 4 substitute for handgrip MVC).
+ * Key-press calibration task. Phase 4 substitute for handgrip MVC.
  *
- * Three 10-second maximal-rate spacebar trials separated by 30-second rests.
- * Per-trial rate = (number of valid presses) / trial duration. Take the
- * median across trials as `p_max` (the analog of B in the unified model).
+ * Three 10-second max-rate spacebar trials with 30-second rests; the
+ * median rate becomes `pMax`. Three anti-cheating measures:
  *
- * Anti-cheating measures (CLAUDE.md §9 raised these as expected concerns):
- *
- *  1. **Auto-repeat detection.** Browser key-repeat fires `keydown` only;
- *     a real human press fires `keydown` + `keyup`. We require alternating
- *     events.
- *  2. **Rate ceiling.** Above ~15 presses/sec is physically implausible for
- *     a typical participant. Trials with rates above the ceiling get flagged
- *     and excluded from the median.
- *  3. **Inter-press-interval regularity.** Macros fire at near-perfect
- *     intervals; humans have ~5-15% jitter. We compute the coefficient of
- *     variation of inter-press intervals; values below a threshold flag
- *     the trial.
- *
- * The task returns a `CalibrationResult` describing the median rate and the
- * per-trial detail. Callers (e.g. `effortDiscounting.ts`) read `pMax` and
- * scale effort levels to it.
+ * 1. **Auto-repeat detection.** Browser key-repeat fires only `keydown`,
+ *    not `keyup`; we require alternating events.
+ * 2. **Rate ceiling** (`MAX_PLAUSIBLE_RATE`). Implausibly fast trials
+ *    are flagged and excluded.
+ * 3. **Inter-press-interval CV.** Macros fire near-perfectly; humans
+ *    have ~5-15% jitter. CV below 0.05 flags the trial.
  */
 
-import type { JsPsych } from "jspsych";
 import jsPsychHtmlKeyboardResponse from "@jspsych/plugin-html-keyboard-response";
 import jsPsychInstructions from "@jspsych/plugin-instructions";
 
@@ -60,10 +48,7 @@ export interface CalibrationResult {
   trials: CalibrationTrial[];
 }
 
-/**
- * Compute the coefficient of variation of inter-press intervals.
- * Returns 0 if fewer than 2 intervals are available (i.e. fewer than 3 presses).
- */
+/** CV of inter-press intervals; 0 when fewer than 3 timestamps are available. */
 function ipiCoefficientOfVariation(timestamps: number[]): number {
   if (timestamps.length < 3) return 0;
   const intervals: number[] = [];
@@ -77,11 +62,7 @@ function ipiCoefficientOfVariation(timestamps: number[]): number {
   return Math.sqrt(variance) / mean;
 }
 
-/**
- * Apply the anti-cheating heuristics to a single trial's measurements.
- *
- * Returns the same trial with `flagged` / `flagReason` filled in.
- */
+/** Apply the three anti-cheating heuristics; returns the trial with `flagged` set. */
 export function flagTrial(trial: CalibrationTrial): CalibrationTrial {
   if (trial.rate > MAX_PLAUSIBLE_RATE) {
     return {
@@ -102,13 +83,14 @@ export function flagTrial(trial: CalibrationTrial): CalibrationTrial {
 }
 
 /**
- * Build a single max-rate trial that uses jsPsych's html-keyboard-response
- * plugin. We listen on the document for keydown/keyup pairs and only count
- * a press when both events have fired since the previous press, defeating
- * browser auto-repeat (which fires keydown only).
+ * Build one max-rate trial. Each trial creates a fresh closure that owns
+ * its own press timestamps and cleanup; on_load and on_finish reference
+ * them directly through that closure (no global state needed).
  */
-function buildMaxRateTrial(jsPsych: JsPsych, index: number) {
-  const trialDurationMs = CALIBRATION_TRIAL_SECONDS * 1000;
+function buildMaxRateTrial(index: number) {
+  // The fresh-per-trial state these handlers share via closure.
+  const presses: number[] = [];
+  let cleanup: () => void = () => {};
 
   return {
     type: jsPsychHtmlKeyboardResponse,
@@ -121,11 +103,10 @@ function buildMaxRateTrial(jsPsych: JsPsych, index: number) {
       </div>
     `,
     choices: "NO_KEYS" as const,
-    trial_duration: trialDurationMs,
+    trial_duration: CALIBRATION_TRIAL_SECONDS * 1000,
     on_load: () => {
       const counter = document.getElementById("cal-counter");
       const timer = document.getElementById("cal-timer");
-      const presses: number[] = [];
       let awaitingKeyup = false;
 
       const onKeyDown = (e: KeyboardEvent) => {
@@ -143,8 +124,11 @@ function buildMaxRateTrial(jsPsych: JsPsych, index: number) {
 
       document.addEventListener("keydown", onKeyDown);
       document.addEventListener("keyup", onKeyUp);
+      cleanup = () => {
+        document.removeEventListener("keydown", onKeyDown);
+        document.removeEventListener("keyup", onKeyUp);
+      };
 
-      // Countdown timer display, ticked once per second.
       const start = performance.now();
       const tick = (): void => {
         const elapsed = (performance.now() - start) / 1000;
@@ -153,35 +137,16 @@ function buildMaxRateTrial(jsPsych: JsPsych, index: number) {
         if (remaining > 0) setTimeout(tick, 250);
       };
       tick();
-
-      // Stash the presses on the trial's data so on_finish can read them.
-      // jsPsych v8 attaches data via the on_finish callback; we expose the
-      // array on a globally-scoped key that on_finish below reads back.
-      (jsPsych as unknown as { _calPresses?: number[] })._calPresses = presses;
-      (jsPsych as unknown as { _calCleanup?: () => void })._calCleanup = () => {
-        document.removeEventListener("keydown", onKeyDown);
-        document.removeEventListener("keyup", onKeyUp);
-      };
     },
     on_finish: (data: Record<string, unknown>) => {
-      const j = jsPsych as unknown as {
-        _calPresses?: number[];
-        _calCleanup?: () => void;
-      };
-      const presses = j._calPresses ?? [];
-      j._calCleanup?.();
-      j._calPresses = [];
-
+      cleanup();
       const validPresses = presses.length;
-      const durationSec = CALIBRATION_TRIAL_SECONDS;
-      const rate = validPresses / durationSec;
-      const ipiCv = ipiCoefficientOfVariation(presses);
       const trial = flagTrial({
         index,
         validPresses,
-        durationSec,
-        rate,
-        ipiCv,
+        durationSec: CALIBRATION_TRIAL_SECONDS,
+        rate: validPresses / CALIBRATION_TRIAL_SECONDS,
+        ipiCv: ipiCoefficientOfVariation(presses),
         flagged: false,
       });
       data.calibration_trial = trial;
@@ -215,13 +180,7 @@ function buildRestTrial(index: number) {
   };
 }
 
-/**
- * Aggregate per-trial calibration data into a final `CalibrationResult`.
- *
- * Returns the median rate across non-flagged trials. If every trial is
- * flagged, returns `ok: false` with `pMax = NaN` so the caller can decide
- * whether to retry, exclude the participant, or fall back.
- */
+/** Median rate across non-flagged trials; `ok=false`, `pMax=NaN` if all flagged. */
 export function summariseCalibration(trials: CalibrationTrial[]): CalibrationResult {
   const valid = trials.filter((t) => !t.flagged);
   if (valid.length === 0) {
@@ -236,11 +195,8 @@ export function summariseCalibration(trials: CalibrationTrial[]): CalibrationRes
   return { pMax, ok: true, trials };
 }
 
-/**
- * Build the full calibration timeline. Returns the jsPsych timeline array
- * to splice into the master timeline.
- */
-export function buildCalibrationTimeline(jsPsych: JsPsych): unknown[] {
+/** Full calibration timeline (intro + maximal trials interleaved with rests). */
+export function buildCalibrationTimeline(): unknown[] {
   const intro = {
     type: jsPsychInstructions,
     pages: [
@@ -258,7 +214,7 @@ export function buildCalibrationTimeline(jsPsych: JsPsych): unknown[] {
 
   const timeline: unknown[] = [intro];
   for (let i = 0; i < CALIBRATION_TRIALS; i++) {
-    timeline.push(buildMaxRateTrial(jsPsych, i));
+    timeline.push(buildMaxRateTrial(i));
     if (i < CALIBRATION_TRIALS - 1) timeline.push(buildRestTrial(i));
   }
   return timeline;

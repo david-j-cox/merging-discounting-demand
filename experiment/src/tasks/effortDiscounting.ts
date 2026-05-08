@@ -1,20 +1,13 @@
 /**
  * Effort discounting task (Task 2).
  *
- * For each of the six effort fractions in `EFFORT_FRACTIONS`, run an
- * adjusting-amount titration to find the indifference reward at that
- * effort level. The effort level is expressed as a target key-press rate
- * `f * pMax` that the subject would have to maintain for
- * `SUSTAINED_TRIAL_SECONDS`. Most trials are hypothetical; a sparse
- * fraction (`VERIFICATION_TRIAL_FRACTION`) require the subject to actually
- * perform the sustained-rate task to validate compliance.
- *
- * The pre-registered modeling commitment is that this task plus the
- * standard purchase task (Task 1) shares α with each subject; H1 is the
- * shared-α-vs-independent-α ΔBIC test.
+ * One adjusting-amount titration per effort fraction in
+ * `EFFORT_FRACTIONS`. Effort level = `f * pMax` presses/sec sustained
+ * for `SUSTAINED_TRIAL_SECONDS`. Mostly hypothetical; a sparse
+ * `VERIFICATION_TRIAL_FRACTION` of trials require the real key-press
+ * task as a compliance check.
  */
 
-import type { JsPsych } from "jspsych";
 import jsPsychHtmlButtonResponse from "@jspsych/plugin-html-button-response";
 import jsPsychHtmlKeyboardResponse from "@jspsych/plugin-html-keyboard-response";
 import jsPsychInstructions from "@jspsych/plugin-instructions";
@@ -52,14 +45,7 @@ export interface EffortDiscountingResult {
   pMaxUsed: number;
 }
 
-/**
- * Sample without replacement from `1..nTotal-1` (inclusive of 1, exclusive
- * of nTotal) to pick which titration trials get verification. We never
- * verify on step 0 (pre-titration warm-up) and we never verify all of one
- * fraction's trials.
- *
- * Returned indices are global trial indices, not per-fraction.
- */
+/** Pick `~nTotal*fraction` trial indices for verification, skipping index 0. */
 function chooseVerificationIndices(
   nTotal: number,
   fraction: number,
@@ -75,19 +61,18 @@ function chooseVerificationIndices(
   return indices;
 }
 
-/**
- * Build a verification trial: the subject actually performs the sustained
- * rate task for SUSTAINED_TRIAL_SECONDS at the target rate.
- */
+/** Verification trial: subject performs SUSTAINED_TRIAL_SECONDS at the target rate. */
 function buildVerificationTrial(targetRate: number, fraction: number) {
-  const trialDurationMs = SUSTAINED_TRIAL_SECONDS * 1000;
-  const formattedRate = targetRate.toFixed(1);
+  // Per-trial closure state (no global stash needed).
+  const timestamps: number[] = [];
+  let cleanup: () => void = () => {};
+
   return {
     type: jsPsychHtmlKeyboardResponse,
     stimulus: `
       <div style="text-align: center;">
         <h2>Verification trial</h2>
-        <p>Press SPACE at about <strong>${formattedRate} presses/sec</strong>
+        <p>Press SPACE at about <strong>${targetRate.toFixed(1)} presses/sec</strong>
            for ${SUSTAINED_TRIAL_SECONDS} seconds.</p>
         <p id="ver-counter" style="font-size: 2.5rem; font-weight: bold;">0</p>
         <p id="ver-rate" style="font-size: 1.2rem;">0.0 presses/sec</p>
@@ -95,12 +80,11 @@ function buildVerificationTrial(targetRate: number, fraction: number) {
       </div>
     `,
     choices: "NO_KEYS" as const,
-    trial_duration: trialDurationMs,
+    trial_duration: SUSTAINED_TRIAL_SECONDS * 1000,
     on_load: () => {
       const counter = document.getElementById("ver-counter");
       const rateLabel = document.getElementById("ver-rate");
       const timer = document.getElementById("ver-timer");
-      const timestamps: number[] = [];
       let awaitingKeyup = false;
       const start = performance.now();
 
@@ -118,6 +102,10 @@ function buildVerificationTrial(targetRate: number, fraction: number) {
       };
       document.addEventListener("keydown", onKeyDown);
       document.addEventListener("keyup", onKeyUp);
+      cleanup = () => {
+        document.removeEventListener("keydown", onKeyDown);
+        document.removeEventListener("keyup", onKeyUp);
+      };
 
       const tick = (): void => {
         const elapsed = (performance.now() - start) / 1000;
@@ -128,54 +116,36 @@ function buildVerificationTrial(targetRate: number, fraction: number) {
         if (remaining > 0) setTimeout(tick, 250);
       };
       tick();
-
-      (jsPsychHtmlKeyboardResponse as unknown as { _verCleanup?: () => void })._verCleanup = () => {
-        document.removeEventListener("keydown", onKeyDown);
-        document.removeEventListener("keyup", onKeyUp);
-      };
-      (jsPsychHtmlKeyboardResponse as unknown as { _verPresses?: number[] })._verPresses = timestamps;
     },
     on_finish: (data: Record<string, unknown>) => {
-      const j = jsPsychHtmlKeyboardResponse as unknown as {
-        _verPresses?: number[];
-        _verCleanup?: () => void;
-      };
-      const presses = j._verPresses ?? [];
-      j._verCleanup?.();
-      j._verPresses = [];
-
-      const observedRate = presses.length / SUSTAINED_TRIAL_SECONDS;
+      cleanup();
+      const observedRate = timestamps.length / SUSTAINED_TRIAL_SECONDS;
       const tolerance = RATE_TOLERANCE * targetRate;
-      const passed = Math.abs(observedRate - targetRate) <= tolerance;
       data.verification = {
         fraction,
         targetRate,
         observedRate,
-        passed,
+        passed: Math.abs(observedRate - targetRate) <= tolerance,
         tolerance,
-        nPresses: presses.length,
+        nPresses: timestamps.length,
       };
     },
   };
 }
 
 /**
- * Build the full effort-discounting timeline.
+ * Full effort-discounting timeline.
  *
- * The titrations for the six effort fractions are run sequentially, each
- * driven by a `Titrator` instance whose state we mutate from the per-trial
- * `on_finish` callbacks. After the last titration step for a given
- * fraction, if that fraction was randomly selected for verification, we
- * splice in one verification trial.
+ * Sequential per-fraction titrations: each step's stimulus is a function
+ * of the prior choices (jsPsych procedural form). The Titrator instances
+ * persist via the closure over `titrators`. Verification trials are
+ * spliced in for the fractions selected by `chooseVerificationIndices`.
  */
 export function buildEffortDiscountingTimeline(
-  jsPsych: JsPsych,
   pMax: number,
   rng: () => number = Math.random,
 ): { timeline: unknown[]; readResult: () => EffortDiscountingResult } {
   const totalFractions = EFFORT_FRACTIONS.length;
-  // One verification trial per ~10 fractions on average. With 6 fractions
-  // and a 10% rate, we expect ~0-1 verifications per subject on most runs.
   const verifyFractions = chooseVerificationIndices(
     totalFractions,
     VERIFICATION_TRIAL_FRACTION,
@@ -212,9 +182,6 @@ export function buildEffortDiscountingTimeline(
     const titrator = new Titrator(REWARD_MAX_USD);
     titrators.set(fraction, titrator);
 
-    // Each titration step is a function-of-state trial: the offer to display
-    // depends on the subject's prior choices, so we wrap each step in
-    // jsPsych's procedural form via a callback that builds the trial fresh.
     for (let step = 0; step < titrator.maxSteps; step++) {
       timeline.push({
         timeline: [
@@ -281,10 +248,6 @@ export function buildEffortDiscountingTimeline(
     allChoices,
     pMaxUsed: pMax,
   });
-
-  // Mark `jsPsych` as deliberately unused at the timeline level (we use it
-  // only via the closure above when the trials run).
-  void jsPsych;
 
   return { timeline, readResult };
 }
