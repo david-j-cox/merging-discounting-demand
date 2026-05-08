@@ -74,6 +74,7 @@ ignore = [
     "E501",    # line length handled by formatter
     "N803",    # allow mathy lowercase arg names like alpha
     "N806",    # allow mathy locals like Q0, Pmax
+    "N815",    # allow mathy class attrs like log_Q0_mean
     "RUF002",  # allow en dashes in docstrings (Effort–Demand)
     "RUF003",  # same, in comments
 ]

@@ -48,10 +48,14 @@ For each retained subject we fit:
 | Hyperboloid discount | `A`, `λ`, `s` | none | Task 2 alone |
 | Sigmoidal discount | `A`, `s`, `E0` | none | Task 2 alone |
 
-`k` is fixed at the pre-registered population median (estimated from the
-pilot; locked at the end of Phase 5) because Phase 3 simulations showed
-that fitting `k` free produces an α-k identifiability problem (RMSE on α
-goes from ~14% with fixed k to ~57% with free k).
+`k` is **shared across participants** — Hursh's standard practice in the
+demand-curve literature. In the NLS fits this means a single value (the
+pilot-estimated population median) is held constant; in the hierarchical
+Bayesian fit it means a single `k` parameter is sampled with a population
+prior rather than a per-subject deviate. Phase 3 simulations confirmed
+this is what the data prefer: fitting `k` free per subject produces an
+α-k identifiability problem (α RMSE goes from ~14% with fixed k to ~57%
+with free k).
 
 `B` is anchored to each subject's measured capability (handgrip MVC for
 physical effort, N-back threshold for cognitive effort), per CLAUDE.md

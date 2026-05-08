@@ -225,23 +225,43 @@ def recover_unified_joint(
     log_noise_sd: float = 0.10,
     sv_noise_sd: float = 0.5,
     A: float = 10.0,
+    b_noise_pct: float = 0.0,
 ) -> RecoveryReport:
-    """Fit the unified model jointly to purchase + effort-discount data per subject."""
+    """Fit the unified model jointly to purchase + effort-discount data per subject.
+
+    Parameters
+    ----------
+    b_noise_pct
+        Multiplicative log-normal noise applied to the ``B`` value passed
+        to the joint fit, with ``b_noise_pct`` interpreted as approximate
+        relative-error percentage (sd in log-space ≈ ``b_noise_pct / 100``).
+        ``0`` reproduces the original "B fixed at truth" recovery; positive
+        values mimic measurement noise on MVC / N-back. The data are still
+        generated from the true ``B``; only the value the fitter sees is
+        perturbed.
+    """
     n = len(subjects)
     names = ("Q0", "alpha", "k")
     true = {name: np.array([getattr(s, name) for s in subjects]) for name in names}
     fit_arr = {name: np.full(n, np.nan) for name in names}
 
+    log_noise = b_noise_pct / 100.0
+
     for i, s in enumerate(subjects):
         purchase = simulate_purchase_task(s, rng=rng, log_noise_sd=log_noise_sd)
         effort = simulate_effort_discounting(s, rng=rng, A=A, sv_noise_sd=sv_noise_sd)
-        result = _fit_unified_joint(s, purchase, effort, A=A, fix_B=True)
+        if log_noise > 0:
+            B_used = float(s.B * np.exp(rng.normal(0.0, log_noise)))
+            s_for_fit = SubjectParams(alpha=s.alpha, Q0=s.Q0, k=s.k, B=B_used)
+        else:
+            s_for_fit = s
+        result = _fit_unified_joint(s_for_fit, purchase, effort, A=A, fix_B=True)
         if result is not None:
             for name in names:
                 fit_arr[name][i] = result[name]
 
     per_param = {name: _summarise(name, true[name], fit_arr[name]) for name in names}
-    return RecoveryReport(n=n, per_param=per_param)
+    return RecoveryReport(n=n, per_param=per_param, extra={"b_noise_pct": b_noise_pct})
 
 
 # ---------------------------------------------------------------------------
@@ -257,6 +277,7 @@ def sample_size_sweep(
     log_noise_sd: float = 0.10,
     sv_noise_sd: float = 0.5,
     fix_k: float | None = None,
+    b_noise_pct: float = 0.0,
 ) -> list[RecoveryReport]:
     """Run a recovery experiment at each requested sample size.
 
@@ -284,7 +305,11 @@ def sample_size_sweep(
         subjects = sample_population(n, rng=rng)
         if mode == "joint":
             report = recover_unified_joint(
-                subjects, rng=rng, log_noise_sd=log_noise_sd, sv_noise_sd=sv_noise_sd
+                subjects,
+                rng=rng,
+                log_noise_sd=log_noise_sd,
+                sv_noise_sd=sv_noise_sd,
+                b_noise_pct=b_noise_pct,
             )
         elif mode == "single_free_k":
             report = recover_demand(subjects, rng=rng, log_noise_sd=log_noise_sd)
