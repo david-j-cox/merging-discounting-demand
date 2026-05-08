@@ -1,15 +1,16 @@
 /**
  * Main entry point. Orchestrates the full battery:
  *
- *   1. Welcome / consent placeholder
- *   2. Calibration
- *   3. Three tasks in counterbalanced order (per randomization)
- *   4. Debrief / data export
+ *   1. Welcome
+ *   2. Informed consent (decline -> polite exit, no data recorded)
+ *   3. Calibration
+ *   4. Three tasks in counterbalanced order (per randomization)
+ *   5. Debrief / data export
  *
  * URL flags (development only):
  *
- *   ?dev=calibration|task1|task2|task3   skip into a single stage
- *   ?seed=N                              override the randomization seed
+ *   ?dev=consent|calibration|task1|task2|task3   skip into one stage
+ *   ?seed=N                                       override the seed
  */
 
 import jsPsychHtmlButtonResponse from "@jspsych/plugin-html-button-response";
@@ -28,6 +29,7 @@ import {
   type CalibrationResult,
   type CalibrationTrial,
 } from "./tasks/calibration";
+import { CONSENT_TRIAL, readConsentAgreement } from "./tasks/consent";
 import {
   buildEffortDiscountingTimeline,
   type EffortDiscountingResult,
@@ -50,7 +52,7 @@ interface TaskTimeline<R> {
 }
 
 const DEFAULT_DEV_PMAX = 5.0;
-const DEV_STAGES = new Set(["calibration", "task1", "task2", "task3"]);
+const DEV_STAGES = new Set(["consent", "calibration", "task1", "task2", "task3"]);
 
 interface UrlFlags {
   dev: string | null;
@@ -132,6 +134,7 @@ async function run(): Promise<void> {
   if (flags.dev) {
     const pMax = DEFAULT_DEV_PMAX;
     const stages: Record<string, () => unknown[]> = {
+      consent: () => [CONSENT_TRIAL],
       calibration: () => calTimeline,
       task1: () => buildTask1(pMax).timeline,
       task2: () => buildTask2(pMax).timeline,
@@ -141,8 +144,20 @@ async function run(): Promise<void> {
     return;
   }
 
+  // ---- Welcome -> Consent ----
+  await jsPsych.run([WELCOME_TRIAL, CONSENT_TRIAL] as RunTimeline);
+  const allData = jsPsych.data.get().values() as Array<Record<string, unknown>>;
+  if (!readConsentAgreement(allData)) {
+    showMessage(
+      `<h2>Thank you</h2>
+       <p>You have declined to participate. No data has been recorded.
+          You may close this window.</p>`,
+    );
+    return;
+  }
+
   // ---- Calibration ----
-  await jsPsych.run([WELCOME_TRIAL, ...calTimeline] as RunTimeline);
+  await jsPsych.run(calTimeline as RunTimeline);
   const calResult = collectCalibration();
   if (!calResult.ok) {
     showMessage(
