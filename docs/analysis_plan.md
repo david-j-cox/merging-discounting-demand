@@ -136,9 +136,17 @@ sampling.
 greater in the low-substitutability arm than in the high-substitutability
 arm.
 
-**Test statistic.** Between-subjects t-test on individual `α` estimates,
-with prior on the effect size from Hursh's substitutability work
-(typically a 1.5–2× ratio).
+**Test statistic.** Posterior of `mu_log_alpha[low] - mu_log_alpha[high]`
+from a hierarchical Bayesian fit that includes arm as a covariate. The
+fit runs `fit_unified_hierarchical(..., arm_index=...)`, which estimates
+a separate population mean per arm and exposes `diff_log_alpha` as a
+deterministic. The single-population fit followed by post-hoc subject
+slicing is biased (validated against synthetic data in notebook 05); the
+arm-aware fit is the pre-registered model.
+
+A classical two-sample t-test on per-subject `α` estimates is a
+secondary sensitivity check, with prior on the effect size from Hursh's
+substitutability work (typically a 1.5–2× ratio).
 
 **Decision rule.**
 * H3 **supported** if the 95% credible interval on the arm difference

@@ -224,6 +224,7 @@ def hierarchical_unified(
     *,
     priors: Priors = DEFAULT_PRIORS,
     share_k: bool = True,
+    arm_index: jnp.ndarray | None = None,
 ) -> None:
     """NumPyro model for the hierarchical unified-model joint fit.
 
@@ -254,12 +255,37 @@ def hierarchical_unified(
         form has one population parameter for ``k`` and no per-subject
         deviates, which is the most identifiable choice and the one
         pre-registered in ``docs/analysis_plan.md``.
+    arm_index
+        Optional integer array of shape ``(n_subjects,)`` with values 0
+        (low-IF arm) or 1 (high-IF arm). When supplied, the model
+        estimates a separate ``mu_log_alpha`` per arm; the H3 arm
+        contrast is then read directly from ``mu_log_alpha_per_arm`` in
+        the posterior. When ``None`` (default), one global
+        ``mu_log_alpha`` is shared across all subjects, which is
+        appropriate for the synthetic recovery experiments and the
+        single-arm pilot but **biases the H3 contrast** in real data
+        (see notebook 05). Pass the arm index whenever H3 is being
+        tested.
     """
     n_subj = Q_obs.shape[0]
 
-    mu_la = numpyro.sample(
-        "mu_log_alpha", dist.Normal(priors.log_alpha_mean, priors.log_alpha_mean_sd)
-    )
+    if arm_index is not None:
+        # Two-arm model: per-arm population means, shared population sd.
+        mu_la_per_arm = numpyro.sample(
+            "mu_log_alpha_per_arm",
+            dist.Normal(
+                priors.log_alpha_mean * jnp.ones(2),
+                priors.log_alpha_mean_sd * jnp.ones(2),
+            ),
+        )
+        mu_la = mu_la_per_arm[arm_index]  # broadcast to (n_subj,)
+        # Expose the contrast directly for downstream analysis.
+        # Stored on the natural-log scale; the analysis converts to log10.
+        numpyro.deterministic("diff_log_alpha", mu_la_per_arm[0] - mu_la_per_arm[1])
+    else:
+        mu_la = numpyro.sample(
+            "mu_log_alpha", dist.Normal(priors.log_alpha_mean, priors.log_alpha_mean_sd)
+        )
     sigma_la = numpyro.sample(
         "sigma_log_alpha", dist.HalfCauchy(priors.log_alpha_scale_concentration)
     )
@@ -350,18 +376,27 @@ def fit_unified_hierarchical(
     A: float = 10.0,
     priors: Priors = DEFAULT_PRIORS,
     share_k: bool = True,
+    arm_index: NDArray[np.integer[Any]] | None = None,
     n_warmup: int = 1000,
     n_samples: int = 1000,
     n_chains: int = 2,
     seed: int = 2025,
     progress_bar: bool = False,
 ) -> az.InferenceData:
-    """Run NUTS on :func:`hierarchical_unified`. Returns InferenceData."""
+    """Run NUTS on :func:`hierarchical_unified`. Returns InferenceData.
+
+    Pass ``arm_index`` (per-subject 0/1 array) whenever the H3 contrast
+    will be evaluated; this gives the model a per-arm
+    ``mu_log_alpha_per_arm`` and an exposed ``diff_log_alpha``
+    deterministic, both of which avoid the bias documented in
+    ``notebooks/05_pilot_analysis.ipynb``.
+    """
     P_j = jnp.asarray(P, dtype=jnp.float32)
     Q_j = jnp.asarray(Q_obs, dtype=jnp.float32)
     E_j = jnp.asarray(E, dtype=jnp.float32)
     SV_j = jnp.asarray(SV_obs, dtype=jnp.float32)
     B_j = jnp.asarray(B_anchor, dtype=jnp.float32)
+    arm_j = jnp.asarray(arm_index, dtype=jnp.int32) if arm_index is not None else None
     nuts = NUTS(hierarchical_unified)
     mcmc = MCMC(
         nuts,
@@ -384,6 +419,7 @@ def fit_unified_hierarchical(
             A=A,
             priors=priors,
             share_k=share_k,
+            arm_index=arm_j,
         )
     return az.from_numpyro(mcmc)  # type: ignore[no-any-return,no-untyped-call,unused-ignore]
 
