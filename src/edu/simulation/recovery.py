@@ -170,29 +170,72 @@ def _fit_unified_joint(
     *,
     A: float = 10.0,
     fix_B: bool = True,
+    fix_k: float | None = None,
 ) -> dict[str, float] | None:
     """Fit UnifiedCapabilityBounded jointly to one subject's two task datasets.
 
     Residuals are computed in two scales (log10 for purchase task, linear
     for SV) and concatenated. ``B`` is held fixed at the true value when
-    ``fix_B`` is true, mirroring the experimental practice of anchoring B
-    to measured capability.
+    ``fix_B`` is true, mirroring the experimental practice of anchoring
+    B to measured capability.
+
+    Parameters
+    ----------
+    fix_k
+        If given, hold ``k`` constant at this value across the fit.
+        Pre-registered analysis (``docs/analysis_plan.md``) shares ``k``
+        across subjects in both NLS and Bayesian fits; in the population-
+        scale recovery experiments this is enforced by passing the
+        population median of the simulated true ``k`` values.
     """
     P_obs, Q_obs = purchase_data
     E_obs, SV_obs = effort_data
     m = UnifiedCapabilityBounded()
     ko = Koffarnus()
 
-    # Free parameters: Q0, alpha, k. (B fixed; A fixed at design value.)
-    # Initial guess from the data magnitudes.
+    if not fix_B:
+        msg = "Joint fit with free B is not yet implemented; pass fix_B=True."
+        raise NotImplementedError(msg)
+
     Q0_init = float(np.max(Q_obs[Q_obs > 0])) if (Q_obs > 0).any() else 1.0
+    if fix_k is not None:
+        # Two parameters free: Q0, alpha. k is held constant.
+        x0 = np.array([Q0_init, 0.01], dtype=float)
+        lb = np.array([1e-6, 1e-9])
+        ub = np.array([1e4, 5.0])
+
+        def residuals(x: FloatArray) -> FloatArray:
+            Q0, alpha = x
+            k = float(fix_k)
+            Q_pred = ko.value({"Q0": Q0, "alpha": alpha, "k": k}, P_obs)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                r_demand = np.where(
+                    (Q_pred > 0) & (Q_obs > 0),
+                    np.log10(np.maximum(Q_pred, 1e-12)) - np.log10(np.maximum(Q_obs, 1e-12)),
+                    0.0,
+                )
+            sv_pred = m.value({"A": A, "Q0": Q0, "alpha": alpha, "k": k, "B": subject.B}, E_obs)
+            return np.concatenate([r_demand, sv_pred - SV_obs])
+
+        try:
+            result = least_squares(residuals, x0, bounds=(lb, ub), method="trf", max_nfev=200)
+        except (ValueError, RuntimeError):
+            return None
+        if not result.success:
+            return None
+        return {
+            "Q0": float(result.x[0]),
+            "alpha": float(result.x[1]),
+            "k": float(fix_k),
+        }
+
+    # Per-subject k (pre-2026-01 default; kept for sensitivity comparison).
     x0 = np.array([Q0_init, 0.01, 3.0], dtype=float)
     lb = np.array([1e-6, 1e-9, 0.5])
     ub = np.array([1e4, 5.0, 6.0])
 
-    def residuals(x: FloatArray) -> FloatArray:
+    def residuals_free_k(x: FloatArray) -> FloatArray:
         Q0, alpha, k = x
-        # purchase-task residuals in log10
         Q_pred = ko.value({"Q0": Q0, "alpha": alpha, "k": k}, P_obs)
         with np.errstate(divide="ignore", invalid="ignore"):
             r_demand = np.where(
@@ -200,17 +243,11 @@ def _fit_unified_joint(
                 np.log10(np.maximum(Q_pred, 1e-12)) - np.log10(np.maximum(Q_obs, 1e-12)),
                 0.0,
             )
-        # SV residuals linear
         sv_pred = m.value({"A": A, "Q0": Q0, "alpha": alpha, "k": k, "B": subject.B}, E_obs)
-        r_sv = sv_pred - SV_obs
-        return np.concatenate([r_demand, r_sv])
-
-    if not fix_B:
-        msg = "Joint fit with free B is not yet implemented; pass fix_B=True."
-        raise NotImplementedError(msg)
+        return np.concatenate([r_demand, sv_pred - SV_obs])
 
     try:
-        result = least_squares(residuals, x0, bounds=(lb, ub), method="trf", max_nfev=200)
+        result = least_squares(residuals_free_k, x0, bounds=(lb, ub), method="trf", max_nfev=200)
     except (ValueError, RuntimeError):
         return None
     if not result.success:
@@ -226,6 +263,7 @@ def recover_unified_joint(
     sv_noise_sd: float = 0.5,
     A: float = 10.0,
     b_noise_pct: float = 0.0,
+    share_k: bool = True,
 ) -> RecoveryReport:
     """Fit the unified model jointly to purchase + effort-discount data per subject.
 
@@ -239,6 +277,12 @@ def recover_unified_joint(
         values mimic measurement noise on MVC / N-back. The data are still
         generated from the true ``B``; only the value the fitter sees is
         perturbed.
+    share_k
+        If True (default, pre-registered modeling commitment), ``k`` is
+        held constant at the population median of the *true* per-subject
+        ``k`` values. Mimics the real-data practice of estimating ``k``
+        in the pilot and locking it for the main analysis. If False,
+        ``k`` is fit per subject (Phase 3 pre-2026-01 default).
     """
     n = len(subjects)
     names = ("Q0", "alpha", "k")
@@ -246,6 +290,7 @@ def recover_unified_joint(
     fit_arr = {name: np.full(n, np.nan) for name in names}
 
     log_noise = b_noise_pct / 100.0
+    fix_k_value: float | None = float(np.median([s.k for s in subjects])) if share_k else None
 
     for i, s in enumerate(subjects):
         purchase = simulate_purchase_task(s, rng=rng, log_noise_sd=log_noise_sd)
@@ -255,13 +300,17 @@ def recover_unified_joint(
             s_for_fit = SubjectParams(alpha=s.alpha, Q0=s.Q0, k=s.k, B=B_used)
         else:
             s_for_fit = s
-        result = _fit_unified_joint(s_for_fit, purchase, effort, A=A, fix_B=True)
+        result = _fit_unified_joint(s_for_fit, purchase, effort, A=A, fix_B=True, fix_k=fix_k_value)
         if result is not None:
             for name in names:
                 fit_arr[name][i] = result[name]
 
     per_param = {name: _summarise(name, true[name], fit_arr[name]) for name in names}
-    return RecoveryReport(n=n, per_param=per_param, extra={"b_noise_pct": b_noise_pct})
+    return RecoveryReport(
+        n=n,
+        per_param=per_param,
+        extra={"b_noise_pct": b_noise_pct, "share_k": share_k, "fix_k_value": fix_k_value},
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -188,8 +188,15 @@ be reported as exploratory.
 ## 7. What was learned in Phase 3 that this plan absorbs
 
 1. Free-`k` fits suffer α-k identifiability problems. **`k` fixed.**
-2. Joint-task fitting recovers `α` ~8x more precisely than single-task
-   fitting. **The unified joint-task fit is the primary fit.**
+2. Joint-task fitting with shared `k` (the pre-registered model)
+   recovers `α` with median bias ~1% and RMSE ~22% at n=240, beating
+   single-task fixed-k (~14% RMSE) and crushing single-task free-k
+   (~57% RMSE). An unconstrained joint fit with per-subject `k`
+   reaches ~6% RMSE on `α`, but at the cost of an α-k identifiability
+   ridge that the simulation suite cannot rule out at finite samples;
+   that variant is documented in notebook 04 as a sensitivity check
+   only. **The unified joint-task fit with shared k is the primary
+   fit.**
 3. H2 fails at the population level under reasonable priors because
    most subjects' crossover lies below the experimental range.
    **H2 reformulated with stratification by `E*/B`.**
