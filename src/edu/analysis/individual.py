@@ -25,10 +25,9 @@ _LN10 = float(np.log(10.0))
 class SubjectSummary:
     """Per-subject collapse of a hierarchical posterior.
 
-    ``k_value`` is the population-level ``k`` for the share_k=True fit
-    (pre-registered default) or the per-subject posterior mean
-    otherwise. ``crossover_mean`` is averaged over draws and is ``nan``
-    when the capability bound never activates.
+    ``k_value`` is the population-level ``k`` (shared across subjects).
+    ``crossover_mean`` is averaged over draws and is ``nan`` when the
+    capability bound never activates.
     """
 
     alpha_mean: float
@@ -71,11 +70,8 @@ def summarise_subjects(
     """
     alpha_samples = _stack_samples(idata, "alpha")  # (n_draws, n_subj)
     Q0_samples = _stack_samples(idata, "Q0")
-    if "k_shared" in idata.posterior:  # type: ignore[attr-defined,unused-ignore]
-        k_samples = _stack_samples(idata, "k_shared")  # (n_draws,)
-        k_per_subj = np.broadcast_to(k_samples[:, None], alpha_samples.shape)
-    else:
-        k_per_subj = _stack_samples(idata, "k_subj")  # (n_draws, n_subj)
+    k_samples = _stack_samples(idata, "k_shared")  # (n_draws,)
+    k_per_subj = np.broadcast_to(k_samples[:, None], alpha_samples.shape)
 
     n_draws, n_subj = alpha_samples.shape
     summaries: list[SubjectSummary] = []

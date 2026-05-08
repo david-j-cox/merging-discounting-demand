@@ -87,8 +87,8 @@ def test_demand_hierarchical_runs_and_recovers() -> None:
 
 
 @pytest.mark.slow
-def test_unified_hierarchical_runs_with_shared_k() -> None:
-    """The default hierarchical unified fit (share_k=True) should converge."""
+def test_unified_hierarchical_runs() -> None:
+    """The hierarchical unified fit converges and exposes the expected variables."""
     P, Q_obs, E, SV_obs, B, true_alpha = _build_data(n_subj=6, seed=0)
     idata = fit_unified_hierarchical(
         P,
@@ -101,9 +101,8 @@ def test_unified_hierarchical_runs_with_shared_k() -> None:
         n_chains=2,
         seed=1,
     )
-    # share_k=True means we get k_shared (a scalar) rather than mu_k/sigma_k.
     assert "k_shared" in idata.posterior
-    assert "mu_k" not in idata.posterior
+    assert "mu_k" not in idata.posterior  # the per-subject-k branch is no longer in the API
 
     import arviz as az
 
@@ -115,27 +114,6 @@ def test_unified_hierarchical_runs_with_shared_k() -> None:
     alpha_post = idata.posterior["alpha"].mean(dim=("chain", "draw")).values
     rho = np.corrcoef(np.log(alpha_post), np.log(true_alpha))[0, 1]
     assert rho > 0.5
-
-
-@pytest.mark.slow
-def test_unified_hierarchical_runs_with_per_subject_k() -> None:
-    """The non-default share_k=False mode should also work and produce mu_k."""
-    P, Q_obs, E, SV_obs, B, _ = _build_data(n_subj=6, seed=0)
-    idata = fit_unified_hierarchical(
-        P,
-        Q_obs,
-        E,
-        SV_obs,
-        B,
-        share_k=False,
-        n_warmup=150,
-        n_samples=150,
-        n_chains=2,
-        seed=1,
-    )
-    assert "mu_k" in idata.posterior
-    assert "sigma_k" in idata.posterior
-    assert "k_shared" not in idata.posterior
 
 
 @pytest.mark.slow

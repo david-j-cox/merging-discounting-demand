@@ -230,10 +230,7 @@ def _draw_subject_params(
     """
     alpha = _stack_samples(idata, "alpha")
     Q0 = _stack_samples(idata, "Q0")
-    if "k_shared" in idata.posterior:  # type: ignore[attr-defined,unused-ignore]
-        k_full = np.broadcast_to(_stack_samples(idata, "k_shared")[:, None], alpha.shape)
-    else:
-        k_full = _stack_samples(idata, "k_subj")
+    k_full = np.broadcast_to(_stack_samples(idata, "k_shared")[:, None], alpha.shape)
     sigma = _stack_samples(idata, extra_var)
 
     rng = rng or np.random.default_rng(0)

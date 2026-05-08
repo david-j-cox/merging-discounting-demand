@@ -162,19 +162,17 @@ def hierarchical_unified(
     A: float = 10.0,
     *,
     priors: Priors = DEFAULT_PRIORS,
-    share_k: bool = True,
     arm_index: jnp.ndarray | None = None,
 ) -> None:
     """Hierarchical unified-model joint fit (purchase + effort discount).
 
-    ``B_anchor`` is the per-subject measured capability, anchored not
+    ``k`` is shared across subjects per Hursh's standard practice (see
+    ``docs/analysis_plan.md``); fitting per-subject ``k`` produces an
+    alpha-k identifiability ridge that recovery cannot resolve.
+
+    ``B_anchor`` is the per-subject measured capability — anchored, not
     estimated. The recovery sweep in :mod:`edu.simulation.recovery`
     quantifies sensitivity to perturbing it.
-
-    ``share_k=True`` (default) samples one population-level ``k`` for
-    all subjects (Hursh's standard practice; pre-registered in
-    ``docs/analysis_plan.md``). The Phase 3 simulations showed that
-    fitting per-subject ``k`` produces an alpha-k identifiability ridge.
 
     ``arm_index`` (per-subject 0/1) gives a separate ``mu_log_alpha``
     per arm and exposes ``diff_log_alpha`` as a deterministic. Pass it
@@ -206,11 +204,7 @@ def hierarchical_unified(
     mu_lQ0 = numpyro.sample("mu_log_Q0", dist.Normal(priors.log_Q0_mean, priors.log_Q0_mean_sd))
     sigma_lQ0 = numpyro.sample("sigma_log_Q0", dist.HalfCauchy(priors.log_Q0_scale_concentration))
 
-    if share_k:
-        k_shared = numpyro.sample("k_shared", dist.Normal(priors.k_mean, priors.k_mean_sd))
-    else:
-        mu_k = numpyro.sample("mu_k", dist.Normal(priors.k_mean, priors.k_mean_sd))
-        sigma_k = numpyro.sample("sigma_k", dist.HalfCauchy(priors.k_scale_concentration))
+    k_shared = numpyro.sample("k_shared", dist.Normal(priors.k_mean, priors.k_mean_sd))
 
     sigma_purchase = numpyro.sample(
         "sigma_purchase", dist.HalfCauchy(priors.sigma_purchase_concentration)
@@ -220,15 +214,10 @@ def hierarchical_unified(
     with numpyro.plate("subjects", n_subj):
         z_la = numpyro.sample("z_log_alpha", dist.Normal(0.0, 1.0))
         z_lQ0 = numpyro.sample("z_log_Q0", dist.Normal(0.0, 1.0))
-        if not share_k:
-            z_k = numpyro.sample("z_k", dist.Normal(0.0, 1.0))
 
     log_alpha = mu_la + sigma_la * z_la
     log_Q0 = mu_lQ0 + sigma_lQ0 * z_lQ0
-    if share_k:
-        k = jnp.broadcast_to(jnp.clip(k_shared, 0.5, 6.0), (n_subj,))
-    else:
-        k = jnp.clip(mu_k + sigma_k * z_k, 0.5, 6.0)
+    k = jnp.broadcast_to(jnp.clip(k_shared, 0.5, 6.0), (n_subj,))
 
     alpha = numpyro.deterministic("alpha", jnp.power(10.0, log_alpha))
     Q0 = numpyro.deterministic("Q0", jnp.power(10.0, log_Q0))
@@ -289,7 +278,6 @@ def fit_unified_hierarchical(
     *,
     A: float = 10.0,
     priors: Priors = DEFAULT_PRIORS,
-    share_k: bool = True,
     arm_index: NDArray[np.integer[Any]] | None = None,
     n_warmup: int = 1000,
     n_samples: int = 1000,
@@ -297,13 +285,11 @@ def fit_unified_hierarchical(
     seed: int = 2025,
     progress_bar: bool = False,
 ) -> az.InferenceData:
-    """Run NUTS on :func:`hierarchical_unified`. Returns InferenceData.
+    """Run NUTS on :func:`hierarchical_unified`.
 
     Pass ``arm_index`` (per-subject 0/1 array) whenever the H3 contrast
-    will be evaluated; this gives the model a per-arm
-    ``mu_log_alpha_per_arm`` and an exposed ``diff_log_alpha``
-    deterministic, both of which avoid the bias documented in
-    ``notebooks/05_pilot_analysis.ipynb``.
+    will be evaluated; the deterministic ``diff_log_alpha`` it exposes
+    avoids the bias documented in ``notebooks/05_pilot_analysis.ipynb``.
     """
     P_j = jnp.asarray(P, dtype=jnp.float32)
     Q_j = jnp.asarray(Q_obs, dtype=jnp.float32)
@@ -332,7 +318,6 @@ def fit_unified_hierarchical(
             B_anchor=B_j,
             A=A,
             priors=priors,
-            share_k=share_k,
             arm_index=arm_j,
         )
     return az.from_numpyro(mcmc)  # type: ignore[no-any-return,no-untyped-call,unused-ignore]

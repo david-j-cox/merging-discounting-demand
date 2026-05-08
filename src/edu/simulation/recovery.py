@@ -143,81 +143,44 @@ def _fit_unified_joint(
     purchase_data: tuple[FloatArray, FloatArray],
     effort_data: tuple[FloatArray, FloatArray],
     *,
+    fix_k: float,
     A: float = 10.0,
-    fix_B: bool = True,
-    fix_k: float | None = None,
 ) -> dict[str, float] | None:
     """Fit UnifiedCapabilityBounded jointly to one subject's purchase + effort data.
 
     Residuals are concatenated across the two scales (log10 for Q,
-    linear for SV). ``fix_B`` anchors ``B`` to the subject's true
-    value; ``fix_k`` anchors ``k`` (the pre-registered NLS commitment).
+    linear for SV). ``B`` is anchored at ``subject.B`` and ``k`` at
+    ``fix_k`` (the population-shared value).
     """
     P_obs, Q_obs = purchase_data
     E_obs, SV_obs = effort_data
     m = UnifiedCapabilityBounded()
     ko = Koffarnus()
 
-    if not fix_B:
-        msg = "Joint fit with free B is not yet implemented; pass fix_B=True."
-        raise NotImplementedError(msg)
-
     Q0_init = float(np.max(Q_obs[Q_obs > 0])) if (Q_obs > 0).any() else 1.0
-    if fix_k is not None:
-        # Two parameters free: Q0, alpha. k is held constant.
-        x0 = np.array([Q0_init, 0.01], dtype=float)
-        lb = np.array([1e-6, 1e-9])
-        ub = np.array([1e4, 5.0])
+    x0 = np.array([Q0_init, 0.01], dtype=float)
+    lb = np.array([1e-6, 1e-9])
+    ub = np.array([1e4, 5.0])
 
-        def residuals(x: FloatArray) -> FloatArray:
-            Q0, alpha = x
-            k = float(fix_k)
-            Q_pred = ko.value({"Q0": Q0, "alpha": alpha, "k": k}, P_obs)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                r_demand = np.where(
-                    (Q_pred > 0) & (Q_obs > 0),
-                    np.log10(np.maximum(Q_pred, 1e-12)) - np.log10(np.maximum(Q_obs, 1e-12)),
-                    0.0,
-                )
-            sv_pred = m.value({"A": A, "Q0": Q0, "alpha": alpha, "k": k, "B": subject.B}, E_obs)
-            return np.concatenate([r_demand, sv_pred - SV_obs])
-
-        try:
-            result = least_squares(residuals, x0, bounds=(lb, ub), method="trf", max_nfev=200)
-        except (ValueError, RuntimeError):
-            return None
-        if not result.success:
-            return None
-        return {
-            "Q0": float(result.x[0]),
-            "alpha": float(result.x[1]),
-            "k": float(fix_k),
-        }
-
-    # Per-subject k (pre-2026-01 default; kept for sensitivity comparison).
-    x0 = np.array([Q0_init, 0.01, 3.0], dtype=float)
-    lb = np.array([1e-6, 1e-9, 0.5])
-    ub = np.array([1e4, 5.0, 6.0])
-
-    def residuals_free_k(x: FloatArray) -> FloatArray:
-        Q0, alpha, k = x
-        Q_pred = ko.value({"Q0": Q0, "alpha": alpha, "k": k}, P_obs)
+    def residuals(x: FloatArray) -> FloatArray:
+        Q0, alpha = x
+        Q_pred = ko.value({"Q0": Q0, "alpha": alpha, "k": fix_k}, P_obs)
         with np.errstate(divide="ignore", invalid="ignore"):
             r_demand = np.where(
                 (Q_pred > 0) & (Q_obs > 0),
                 np.log10(np.maximum(Q_pred, 1e-12)) - np.log10(np.maximum(Q_obs, 1e-12)),
                 0.0,
             )
-        sv_pred = m.value({"A": A, "Q0": Q0, "alpha": alpha, "k": k, "B": subject.B}, E_obs)
+        sv_pred = m.value({"A": A, "Q0": Q0, "alpha": alpha, "k": fix_k, "B": subject.B}, E_obs)
         return np.concatenate([r_demand, sv_pred - SV_obs])
 
     try:
-        result = least_squares(residuals_free_k, x0, bounds=(lb, ub), method="trf", max_nfev=200)
+        result = least_squares(residuals, x0, bounds=(lb, ub), method="trf", max_nfev=200)
     except (ValueError, RuntimeError):
         return None
     if not result.success:
         return None
-    return {"Q0": float(result.x[0]), "alpha": float(result.x[1]), "k": float(result.x[2])}
+    return {"Q0": float(result.x[0]), "alpha": float(result.x[1]), "k": fix_k}
 
 
 def recover_unified_joint(
@@ -228,7 +191,6 @@ def recover_unified_joint(
     sv_noise_sd: float = 0.5,
     A: float = 10.0,
     b_noise_pct: float = 0.0,
-    share_k: bool = True,
 ) -> RecoveryReport:
     """Joint per-subject unified-model fit across a population.
 
@@ -236,9 +198,9 @@ def recover_unified_joint(
     the fitter (data still generated from true ``B``) — quantifies
     sensitivity to MVC / N-back measurement error.
 
-    ``share_k=True`` (the default, pre-registered) anchors ``k`` at the
-    population median; ``share_k=False`` fits ``k`` per subject as a
-    sensitivity check.
+    ``k`` is shared across subjects, anchored at the population median
+    of the simulated true ``k`` values (mirrors the real-data practice
+    of locking ``k`` from the pilot for the main analysis).
     """
     n = len(subjects)
     names = ("Q0", "alpha", "k")
@@ -246,7 +208,7 @@ def recover_unified_joint(
     fit_arr = {name: np.full(n, np.nan) for name in names}
 
     log_noise = b_noise_pct / 100.0
-    fix_k_value: float | None = float(np.median([s.k for s in subjects])) if share_k else None
+    fix_k_value = float(np.median([s.k for s in subjects]))
 
     for i, s in enumerate(subjects):
         purchase = simulate_purchase_task(s, rng=rng, log_noise_sd=log_noise_sd)
@@ -256,7 +218,7 @@ def recover_unified_joint(
             s_for_fit = SubjectParams(alpha=s.alpha, Q0=s.Q0, k=s.k, B=B_used)
         else:
             s_for_fit = s
-        result = _fit_unified_joint(s_for_fit, purchase, effort, A=A, fix_B=True, fix_k=fix_k_value)
+        result = _fit_unified_joint(s_for_fit, purchase, effort, A=A, fix_k=fix_k_value)
         if result is not None:
             for name in names:
                 fit_arr[name][i] = result[name]
@@ -265,7 +227,7 @@ def recover_unified_joint(
     return RecoveryReport(
         n=n,
         per_param=per_param,
-        extra={"b_noise_pct": b_noise_pct, "share_k": share_k, "fix_k_value": fix_k_value},
+        extra={"b_noise_pct": b_noise_pct, "fix_k_value": fix_k_value},
     )
 
 
@@ -288,10 +250,15 @@ def sample_size_sweep(
 
     Modes:
 
-    - ``single_free_k`` — Koffarnus on purchase task only, all params free.
-    - ``single_fixed_k`` — Koffarnus on purchase task only, ``k`` fixed.
     - ``joint`` — UnifiedCapabilityBounded jointly on purchase + effort,
-      ``B`` fixed at the true subject value.
+      ``B`` and ``k`` both anchored. The pre-registered fit.
+    - ``single_fixed_k`` — Koffarnus on the purchase task alone with
+      ``k`` fixed (Hursh's standard practice; published-literature
+      baseline).
+    - ``single_free_k`` — Koffarnus on the purchase task alone with all
+      params free. Demonstrates the alpha-k identifiability ridge and
+      is the figure-1 baseline in notebook 04; never the recommended
+      modeling choice.
     """
     valid = {"single_free_k", "single_fixed_k", "joint"}
     if mode not in valid:
