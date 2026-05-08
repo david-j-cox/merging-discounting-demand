@@ -1,0 +1,89 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# uv
+.uv-cache/
+
+# Testing / coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# --- Node / TypeScript (experiment/) ---
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Editors / IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- Environment / secrets ---
+.env
+.env.local
+.env.*.local
+*.pem
+
+# --- Project-specific: raw data is never edited or committed ---
+data/raw/*
+!data/raw/.gitkeep
+
+# Allow processed and simulated outputs to be committed selectively.
+# Large simulation outputs should still be excluded; un-ignore via -f if needed.
+results/figures/*.pdf
+results/figures/*.png
+!results/figures/.gitkeep
+results/tables/*.csv
+!results/tables/.gitkeep
+
+# OS
+Thumbs.db
+ehthumbs.db

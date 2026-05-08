@@ -1,0 +1,136 @@
+[project]
+name = "edu"
+version = "0.1.0"
+description = "Effort–Demand Unification: a constrained two-commodity demand model unifying behavioral economic demand and effort discounting."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+authors = [
+    { name = "David J. Cox", email = "cox.david.j@gmail.com" },
+]
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "pandas>=2.1",
+    "matplotlib>=3.8",
+    "seaborn>=0.13",
+    "lmfit>=1.2",
+    "numpyro>=0.13",
+    # jaxlib drops macOS x86_64 wheels after 0.4.31; cap until project moves
+    # to arm64 hardware or a Linux runner.
+    "jax>=0.4.20,<0.4.32",
+    "jaxlib>=0.4.20,<0.4.32",
+    "arviz>=0.16",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+notebook = [
+    "jupyter>=1.0",
+    "ipykernel>=6.27",
+    "ipywidgets>=8.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+    "mypy>=1.8",
+    "pre-commit>=3.6",
+    "types-pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/edu"]
+
+[tool.uv]
+package = true
+
+# ---------------- ruff ----------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+    "N",   # pep8-naming
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+    "NPY", # numpy-specific
+]
+ignore = [
+    "E501",    # line length handled by formatter
+    "N803",    # allow mathy lowercase arg names like alpha
+    "N806",    # allow mathy locals like Q0, Pmax
+    "RUF002",  # allow en dashes in docstrings (Effort–Demand)
+    "RUF003",  # same, in comments
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N802", "N803", "N806"]
+"notebooks/**" = ["E402", "F401"]
+"scripts/**" = ["T201"]  # allow print in scripts
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------------- mypy ----------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+disallow_any_generics = true
+no_implicit_reexport = true
+plugins = []
+
+[[tool.mypy.overrides]]
+module = [
+    "scipy.*",
+    "lmfit.*",
+    "numpyro.*",
+    "arviz.*",
+    "matplotlib.*",
+    "seaborn.*",
+    "pandas.*",
+]
+ignore_missing_imports = true
+
+# ---------------- pytest ----------------
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+
+[tool.coverage.run]
+source = ["src/edu"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
