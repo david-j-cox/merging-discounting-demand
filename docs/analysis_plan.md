@@ -146,6 +146,43 @@ with prior on the effect size from Hursh's substitutability work
 
 ---
 
+## 3a. Measurement-error consideration (Phase 3 finding)
+
+The Phase 3 simulation suite established that the pre-registered shared-k
+joint NLS fit recovers per-subject `α` with **median bias ~1% but RMSE
+~22%** at n=240. The bias is small because the population is well-pooled;
+the variance is large because the misspecification of holding `k` constant
+when the true `k` varies across subjects (~0.3 sd in log10) gets absorbed
+into per-subject α estimates.
+
+This has **no effect on H1** as stated, because H1 is a population-level
+test (mean ΔBIC across subjects, proportion of subjects favouring shared)
+that averages over per-subject estimation noise.
+
+It **does affect H1's stronger form and H3**, both of which correlate
+per-subject `α` against another measurement:
+
+* The **stronger H1** (linkage with the model-specified transformation):
+  any test of `α_subject` against derived effort-discount steepness will
+  see the 22% scatter as attenuation. We will report a measurement-error
+  corrected correlation alongside the raw correlation, using the
+  classical errors-in-variables correction with the simulation-derived
+  sd (~22% on `α`) as the input variance.
+
+* **H3 (substitutability arm difference)**: the between-arm t-test on
+  `α` is robust to per-subject scatter as long as the arm sizes are
+  balanced (the scatter inflates the standard error symmetrically and
+  the test stays calibrated). We will pre-register the conventional
+  t-test plus a hierarchical Bayesian re-analysis of the arm difference
+  as a sensitivity check.
+
+The Bayesian fit produces per-subject posteriors for `α` automatically;
+secondary analyses on the Bayesian results substitute posterior samples
+for point estimates and propagate measurement uncertainty through the
+correlation/contrast naturally. This is the preferred pipeline for
+all secondary tests; the NLS-plus-correction approach is the
+backup.
+
 ## 4. Secondary analyses
 
 * **Linkage with the predicted transformation** — H1's stronger form:
