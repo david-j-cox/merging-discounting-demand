@@ -104,7 +104,7 @@ def profile_alpha_k_demand(
 # ---------------------------------------------------------------------------
 
 
-def profile_alpha_B_unified(  # noqa: N802 — B is a math symbol, not a Python identifier choice
+def profile_alpha_B_unified(
     subject: SubjectParams,
     *,
     rng: np.random.Generator,

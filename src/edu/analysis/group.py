@@ -91,9 +91,11 @@ def linkage_correlation(
         ``(chain, draw, n_subjects)``.
     lambda_external
         Per-subject externally-derived steepness, length ``n_subjects``.
-        Treated as fixed (its measurement uncertainty is not propagated
-        in this function; see :func:`linkage_correlation_propagated` for
-        the version that does).
+        Treated as fixed; the *external* steepness's measurement
+        uncertainty is not propagated through this function (the
+        ``alpha`` posterior uncertainty is). For the main analysis we
+        plan to substitute Bayesian posterior samples for both
+        quantities; that path can be added when needed.
     transform
         ``"log"`` correlates ``log(alpha)`` against ``log(lambda_external)``
         (matches the model-derived linkage on a multiplicative scale);

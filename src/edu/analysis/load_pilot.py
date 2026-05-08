@@ -27,7 +27,7 @@ from numpy.typing import NDArray
 FloatArray = NDArray[np.floating[Any]]
 
 
-class InvalidPayload(ValueError):  # noqa: N818 — domain-meaningful name beats convention here
+class InvalidPayload(ValueError):
     """Raised when a session JSON does not match the expected schema."""
 
 

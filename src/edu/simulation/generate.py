@@ -189,20 +189,16 @@ def simulate_effort_purchase_task(
     subject: SubjectParams,
     *,
     rng: np.random.Generator,
-    A: float = 10.0,
     effort_prices: FloatArray = EFFORT_PRICE_DEFAULT,
     log_noise_sd: float = 0.15,
 ) -> tuple[FloatArray, FloatArray]:
     """Generate one subject's effort-purchase-task data.
 
-    Each "price" is an effort cost per acquisition; the dependent measure
-    is how many acquisitions the subject reports they would make. Under the
-    unified model with reward magnitude A this reads:
+    Each "price" is an effort cost per acquisition; the dependent
+    measure is how many acquisitions the subject reports they would
+    make. Consumption follows Koffarnus demand:
 
         Q(P_effort) = Q0 * 10^(k(exp(-alpha*Q0*P_effort) - 1))
-
-    where P_effort is the effort cost per acquisition (units consistent
-    with how ``alpha`` was calibrated in Task 1).
 
     Returns ``(effort_prices, consumption)``.
     """

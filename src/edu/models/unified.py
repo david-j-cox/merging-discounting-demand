@@ -48,9 +48,6 @@ from scipy.optimize import brentq
 
 from edu.models._base import FloatArray, ParametricModel
 
-_LN10 = float(np.log(10.0))
-
-
 # ---------------------------------------------------------------------------
 # Naive form (Step 4)
 # ---------------------------------------------------------------------------

@@ -288,5 +288,3 @@ export function buildEffortDiscountingTimeline(
 
   return { timeline, readResult };
 }
-
-export { chooseVerificationIndices };

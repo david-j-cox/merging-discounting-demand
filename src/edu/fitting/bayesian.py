@@ -56,7 +56,6 @@ from numpy.typing import NDArray
 from numpyro.infer import MCMC, NUTS
 
 FloatArray = NDArray[np.floating[Any]]
-IntArray = NDArray[np.integer[Any]]
 
 
 # ---------------------------------------------------------------------------

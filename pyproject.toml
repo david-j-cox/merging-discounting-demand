@@ -72,9 +72,11 @@ select = [
 ]
 ignore = [
     "E501",    # line length handled by formatter
+    "N802",    # allow math-symbol function names like profile_alpha_B_unified
     "N803",    # allow mathy lowercase arg names like alpha
     "N806",    # allow mathy locals like Q0, Pmax
     "N815",    # allow mathy class attrs like log_Q0_mean
+    "N818",    # allow domain-meaningful exception names (InvalidPayload)
     "RUF002",  # allow en dashes in docstrings (Effort–Demand)
     "RUF003",  # same, in comments
 ]
