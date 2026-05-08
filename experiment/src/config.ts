@@ -1,0 +1,60 @@
+/**
+ * Experiment-wide configuration constants.
+ *
+ * Most values are pre-registered modeling choices that match the simulation
+ * suite (`src/edu/simulation/generate.py`). Changing them after the
+ * pre-registration is filed requires updating the OSF pre-registration too.
+ */
+
+export const STUDY_NAME = "edu-pilot";
+export const STUDY_VERSION = "0.1.0";
+
+/** DataPipe experiment ID. Replaced when the OSF project is created. */
+export const DATAPIPE_EXPERIMENT_ID = "PLACEHOLDER_BEFORE_PILOT";
+
+/** Whether the DataPipe POST goes to test mode (true) or production (false). */
+export const DATAPIPE_TEST_MODE = true;
+
+/**
+ * 17-price array for Task 1 (standard purchase task). Matches the array
+ * in `src/edu/simulation/generate.py` `PRICE_ARRAY_17`.
+ */
+export const PURCHASE_PRICES_USD: readonly number[] = [
+  0.01, 0.05, 0.13, 0.25, 0.5, 1, 2, 5, 13, 25, 50, 100, 200, 350, 500, 800, 1120,
+];
+
+/**
+ * Effort fractions for Task 2 (effort discounting). Each value `f` means
+ * "target rate = f * p_max for 30 seconds". Matches `EFFORT_FRACTIONS_DEFAULT`
+ * in the simulation suite.
+ */
+export const EFFORT_FRACTIONS: readonly number[] = [0.10, 0.25, 0.40, 0.55, 0.70, 0.85];
+
+/** Effort-purchase-task price array; effort cost per unit reward acquired. */
+export const EFFORT_PRICES: readonly number[] = [0.05, 0.1, 0.2, 0.4, 0.7, 1.0, 1.5, 2.0];
+
+/** Maximum reward magnitude (USD-equivalent) used in adjusting-amount titration. */
+export const REWARD_MAX_USD = 10.0;
+
+/** Adjusting-amount titration depth (Du, Green & Myerson 2002 standard = 6). */
+export const TITRATION_STEPS = 6;
+
+/** Sustained-rate trial duration in seconds, for verification trials. */
+export const SUSTAINED_TRIAL_SECONDS = 30;
+
+/** Calibration block: number of maximal trials and rest period. */
+export const CALIBRATION_TRIALS = 3;
+export const CALIBRATION_TRIAL_SECONDS = 10;
+export const CALIBRATION_REST_SECONDS = 30;
+
+/** Fraction of titration trials selected for verification (sparse real-effort). */
+export const VERIFICATION_TRIAL_FRACTION = 0.10;
+
+/**
+ * Maximum physically-plausible key-press rate (presses/sec). Rates above
+ * this are treated as auto-repeat / macro and rejected at calibration.
+ */
+export const MAX_PLAUSIBLE_RATE = 15.0;
+
+/** Tolerance window for sustained-rate verification (fraction of target). */
+export const RATE_TOLERANCE = 0.20;
