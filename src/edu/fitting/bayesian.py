@@ -266,7 +266,7 @@ def fit_demand_hierarchical(
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=UserWarning)
         mcmc.run(rng_key, P=P_j, Q_obs=Q_j, priors=priors)
-    return az.from_numpyro(mcmc)  # type: ignore[no-any-return,no-untyped-call,unused-ignore]
+    return az.from_numpyro(mcmc)  # type: ignore[no-any-return,no-untyped-call]
 
 
 def fit_unified_hierarchical(
@@ -320,7 +320,7 @@ def fit_unified_hierarchical(
             priors=priors,
             arm_index=arm_j,
         )
-    return az.from_numpyro(mcmc)  # type: ignore[no-any-return,no-untyped-call,unused-ignore]
+    return az.from_numpyro(mcmc)  # type: ignore[no-any-return,no-untyped-call]
 
 
 __all__ = [

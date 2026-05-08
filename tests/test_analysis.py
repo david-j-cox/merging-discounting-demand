@@ -23,6 +23,8 @@ from edu.analysis.load_pilot import (
     parse_session,
 )
 
+from .conftest import Cohort, fit_cohort
+
 
 def _good_payload(sid: str = "abc", arm: str = "low", p_max: float = 7.0) -> dict[str, Any]:
     return {
@@ -143,160 +145,85 @@ class TestAssembleCohort:
 class TestSecondaryAnalyses:
     """Smoke-level integration tests: run a tiny fit, check return shapes."""
 
-    def _fit(self) -> dict[str, Any]:
-        # Build a tiny synthetic cohort and fit.
-        from edu.fitting.bayesian import fit_unified_hierarchical
-        from edu.simulation.generate import (
-            sample_population,
-            simulate_effort_discounting,
-            simulate_purchase_task,
-        )
-
-        rng = np.random.default_rng(0)
-        subjects = sample_population(6, rng=rng)
-        P = np.array(
-            [0.01, 0.05, 0.13, 0.25, 0.5, 1, 2, 5, 13, 25, 50, 100, 200, 350, 500, 800, 1120]
-        )
-        Q_obs = np.zeros((6, len(P)))
-        E = np.zeros((6, 6))
-        SV_obs = np.zeros((6, 6))
-        B = np.zeros(6)
-        for i, s in enumerate(subjects):
-            _, q = simulate_purchase_task(s, rng=rng)
-            e, sv = simulate_effort_discounting(s, rng=rng)
-            Q_obs[i] = q
-            E[i] = e
-            SV_obs[i] = sv
-            B[i] = s.B
-        idata = fit_unified_hierarchical(
-            P,
-            Q_obs,
-            E,
-            SV_obs,
-            B,
-            n_warmup=150,
-            n_samples=150,
-            n_chains=2,
-            seed=1,
-        )
-        return {
-            "idata": idata,
-            "P": P,
-            "Q_obs": Q_obs,
-            "E": E,
-            "SV_obs": SV_obs,
-            "B": B,
-            "subjects": subjects,
-        }
-
-    def test_summarise_subjects_returns_one_per_subject(self) -> None:
+    def test_summarise_subjects_returns_one_per_subject(self, small_cohort: Cohort) -> None:
         from edu.analysis.individual import summarise_subjects
 
-        out = self._fit()
-        summaries = summarise_subjects(out["idata"], A=10.0, B_anchor=out["B"])
-        assert len(summaries) == 6
+        idata = fit_cohort(small_cohort)
+        summaries = summarise_subjects(idata, A=10.0, B_anchor=small_cohort.B)
+        assert len(summaries) == small_cohort.B.size
         for s in summaries:
             assert np.isfinite(s.alpha_mean)
             assert s.alpha_hdi[0] <= s.alpha_mean <= s.alpha_hdi[1]
             assert s.lambda_unconstrained_mean > 0
 
-    def test_linkage_correlation_runs_and_returns_finite(self) -> None:
+    def test_linkage_correlation_runs_and_returns_finite(self, small_cohort: Cohort) -> None:
         from edu.analysis.group import linkage_correlation
 
-        out = self._fit()
-        # Use the true alpha-derived lambda as the external steepness.
-        true_alpha = np.array([s.alpha for s in out["subjects"]])
-        true_Q0 = np.array([s.Q0 for s in out["subjects"]])
-        external = true_alpha * true_Q0 * 3.0 * np.log(10) / 10.0
-        res = linkage_correlation(out["idata"], external)
+        idata = fit_cohort(small_cohort)
+        true_Q0 = np.array([s.Q0 for s in small_cohort.subjects])
+        external = small_cohort.true_alpha * true_Q0 * 3.0 * np.log(10) / 10.0
+        res = linkage_correlation(idata, external)
         assert np.isfinite(res.correlation_mean)
         assert -1.0 <= res.correlation_mean <= 1.0
-        assert res.n_subjects == 6
+        assert res.n_subjects == small_cohort.B.size
         assert 0.0 <= res.p_positive <= 1.0
 
-    def test_arm_contrast_handles_balanced_arms(self) -> None:
+    def test_arm_contrast_handles_balanced_arms(self, small_cohort: Cohort) -> None:
         """Preferred path: fit with arm_index, read diff_log_alpha directly."""
         from edu.analysis.group import arm_contrast
-        from edu.fitting.bayesian import fit_unified_hierarchical
 
-        # Build a tiny cohort and fit with arm_index.
-        from edu.simulation.generate import (
-            sample_population,
-            simulate_effort_discounting,
-            simulate_purchase_task,
-        )
-
-        rng = np.random.default_rng(0)
-        subjects = sample_population(6, rng=rng)
-        P = np.array(
-            [0.01, 0.05, 0.13, 0.25, 0.5, 1, 2, 5, 13, 25, 50, 100, 200, 350, 500, 800, 1120]
-        )
-        Q_obs = np.zeros((6, len(P)))
-        E = np.zeros((6, 6))
-        SV_obs = np.zeros((6, 6))
-        B = np.zeros(6)
-        for i, s in enumerate(subjects):
-            _, q = simulate_purchase_task(s, rng=rng)
-            e, sv = simulate_effort_discounting(s, rng=rng)
-            Q_obs[i] = q
-            E[i] = e
-            SV_obs[i] = sv
-            B[i] = s.B
-        arm_index = np.array([0, 0, 0, 1, 1, 1], dtype=int)
-        idata = fit_unified_hierarchical(
-            P,
-            Q_obs,
-            E,
-            SV_obs,
-            B,
-            arm_index=arm_index,
-            n_warmup=150,
-            n_samples=150,
-            n_chains=2,
-            seed=1,
-        )
-        # arm_contrast() should detect diff_log_alpha and use it.
-        arm = np.array(["low", "low", "low", "high", "high", "high"])
+        n = small_cohort.B.size
+        half = n // 2
+        arm_index = np.array([0] * half + [1] * (n - half), dtype=int)
+        idata = fit_cohort(small_cohort, arm_index=arm_index)
+        arm = np.array(["low"] * half + ["high"] * (n - half))
         res = arm_contrast(idata, arm)
-        assert res.n_low == 3
-        assert res.n_high == 3
+        assert res.n_low == half
+        assert res.n_high == n - half
         assert np.isfinite(res.diff_log_alpha_mean)
 
-    def test_arm_contrast_fallback_warns_on_single_population_fit(self) -> None:
+    def test_arm_contrast_fallback_warns_on_single_population_fit(
+        self, small_cohort: Cohort
+    ) -> None:
         """Fallback path: single-population fit triggers the bias warning."""
         import warnings
 
         from edu.analysis.group import arm_contrast
 
-        out = self._fit()  # fit without arm_index
-        arm = np.array(["low", "low", "low", "high", "high", "high"])
+        idata = fit_cohort(small_cohort)  # fit without arm_index
+        n = small_cohort.B.size
+        half = n // 2
+        arm = np.array(["low"] * half + ["high"] * (n - half))
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            res = arm_contrast(out["idata"], arm)
+            res = arm_contrast(idata, arm)
         assert any("biased" in str(warning.message) for warning in w)
         assert np.isfinite(res.diff_log_alpha_mean)
 
-    def test_arm_contrast_rejects_empty_arm_in_fallback(self) -> None:
+    def test_arm_contrast_rejects_empty_arm_in_fallback(self, small_cohort: Cohort) -> None:
         from edu.analysis.group import arm_contrast
 
-        out = self._fit()
-        all_low = np.array(["low"] * 6)
-        # Fallback path raises on missing arm.
+        idata = fit_cohort(small_cohort)
+        all_low = np.array(["low"] * small_cohort.B.size)
         with pytest.raises(ValueError, match="at least one"):
-            arm_contrast(out["idata"], all_low)
+            arm_contrast(idata, all_low)
 
-    def test_posterior_predictive_purchase_shapes(self) -> None:
+    def test_posterior_predictive_purchase_shapes(self, small_cohort: Cohort) -> None:
         from edu.analysis.group import posterior_predictive_purchase
 
-        out = self._fit()
-        ppc = posterior_predictive_purchase(out["idata"], out["P"], out["Q_obs"], n_draws=50)
-        assert ppc.replicates.shape == (50, 6, len(out["P"]))
-        assert ppc.observed.shape == (6, len(out["P"]))
+        idata = fit_cohort(small_cohort)
+        n = small_cohort.B.size
+        ppc = posterior_predictive_purchase(idata, small_cohort.P, small_cohort.Q_obs, n_draws=50)
+        assert ppc.replicates.shape == (50, n, len(small_cohort.P))
+        assert ppc.observed.shape == (n, len(small_cohort.P))
 
-    def test_posterior_predictive_sv_shapes(self) -> None:
+    def test_posterior_predictive_sv_shapes(self, small_cohort: Cohort) -> None:
         from edu.analysis.group import posterior_predictive_sv
 
-        out = self._fit()
-        ppc = posterior_predictive_sv(out["idata"], out["E"], out["SV_obs"], out["B"], n_draws=50)
-        assert ppc.replicates.shape == (50, 6, 6)
-        assert ppc.observed.shape == (6, 6)
+        idata = fit_cohort(small_cohort)
+        n = small_cohort.B.size
+        ppc = posterior_predictive_sv(
+            idata, small_cohort.E, small_cohort.SV_obs, small_cohort.B, n_draws=50
+        )
+        assert ppc.replicates.shape == (50, n, 6)
+        assert ppc.observed.shape == (n, 6)

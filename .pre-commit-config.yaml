@@ -28,5 +28,6 @@ repos:
         files: ^src/edu/
         additional_dependencies:
           - numpy>=1.26
+          - arviz>=0.16
           - types-pyyaml
         args: ["--strict", "--ignore-missing-imports"]

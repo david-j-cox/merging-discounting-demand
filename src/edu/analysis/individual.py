@@ -42,7 +42,7 @@ class SubjectSummary:
 
 def _stack_samples(idata: az.InferenceData, var: str) -> FloatArray:
     """Flatten chain x draw into a single sample dim. Returns shape (n_draws, ...)."""
-    da = idata.posterior[var]  # type: ignore[attr-defined,unused-ignore]
+    da = idata.posterior[var]  # type: ignore[attr-defined]
     n_chains = da.sizes["chain"]
     n_draws = da.sizes["draw"]
     return np.asarray(da.values.reshape(n_chains * n_draws, *da.shape[2:]), dtype=float)
@@ -51,7 +51,7 @@ def _stack_samples(idata: az.InferenceData, var: str) -> FloatArray:
 def _hdi(samples: FloatArray, prob: float = 0.95) -> tuple[float, float]:
     """Highest density interval for 1D samples via arviz."""
     arr = np.asarray(samples, dtype=float)
-    bounds = az.hdi(arr, hdi_prob=prob)  # type: ignore[no-untyped-call,unused-ignore]
+    bounds = az.hdi(arr, hdi_prob=prob)  # type: ignore[no-untyped-call]
     # arviz returns either (2,) or a 1D ndarray-like; coerce both ways.
     bounds_arr = np.asarray(bounds).flatten()
     return float(bounds_arr[0]), float(bounds_arr[1])

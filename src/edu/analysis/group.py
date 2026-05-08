@@ -96,7 +96,7 @@ def linkage_correlation(
             n_subjects=n_subj,
             n_draws=n_draws,
         )
-    bounds = np.asarray(az.hdi(valid, hdi_prob=0.95)).flatten()  # type: ignore[no-untyped-call,unused-ignore]
+    bounds = np.asarray(az.hdi(valid, hdi_prob=0.95)).flatten()  # type: ignore[no-untyped-call]
     return LinkageCorrelation(
         correlation_mean=float(np.mean(valid)),
         correlation_hdi=(float(bounds[0]), float(bounds[1])),
@@ -147,13 +147,13 @@ def arm_contrast(
     # Preferred path: the model exposed diff_log_alpha as a deterministic.
     # Stored on the natural-log scale by NumPyro; convert to log10 for
     # consistency with the docstring and analysis plan.
-    if "diff_log_alpha" in idata.posterior:  # type: ignore[attr-defined,unused-ignore]
+    if "diff_log_alpha" in idata.posterior:  # type: ignore[attr-defined]
         diffs_natural = _stack_samples(idata, "diff_log_alpha")  # (n_draws,)
         diffs = diffs_natural / np.log(10.0)  # convert ln to log10
         n_draws = diffs.shape[0]
         n_low = int((arm_arr == "low").sum())
         n_high = int((arm_arr == "high").sum())
-        bounds = np.asarray(az.hdi(diffs, hdi_prob=0.95)).flatten()  # type: ignore[no-untyped-call,unused-ignore]
+        bounds = np.asarray(az.hdi(diffs, hdi_prob=0.95)).flatten()  # type: ignore[no-untyped-call]
         return ArmContrast(
             diff_log_alpha_mean=float(np.mean(diffs)),
             diff_log_alpha_hdi=(float(bounds[0]), float(bounds[1])),
@@ -187,7 +187,7 @@ def arm_contrast(
 
     log_alpha = np.log10(np.maximum(alpha, 1e-12))
     diffs = log_alpha[:, is_low].mean(axis=1) - log_alpha[:, is_high].mean(axis=1)
-    bounds = np.asarray(az.hdi(diffs, hdi_prob=0.95)).flatten()  # type: ignore[no-untyped-call,unused-ignore]
+    bounds = np.asarray(az.hdi(diffs, hdi_prob=0.95)).flatten()  # type: ignore[no-untyped-call]
     return ArmContrast(
         diff_log_alpha_mean=float(np.mean(diffs)),
         diff_log_alpha_hdi=(float(bounds[0]), float(bounds[1])),
