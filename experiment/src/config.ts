@@ -9,10 +9,19 @@
 export const STUDY_NAME = "edu-pilot";
 export const STUDY_VERSION = "0.1.0";
 
-/** DataPipe experiment ID. Replaced when the OSF project is created. */
-export const DATAPIPE_EXPERIMENT_ID = "PLACEHOLDER_BEFORE_PILOT";
+/**
+ * DataPipe experiment ID for the edu-pilot study (OSF project ``rys6a``).
+ * Replace with ``"PLACEHOLDER_BEFORE_PILOT"`` to disable POSTs during
+ * local development without an OSF target.
+ */
+export const DATAPIPE_EXPERIMENT_ID: string = "SfEZb5tfFFLa";
 
-/** Whether the DataPipe POST goes to test mode (true) or production (false). */
+/**
+ * Whether the DataPipe POST is flagged as test data (true) or production
+ * (false). Keep ``true`` through pilot validation; flip to ``false`` only
+ * for the main study after the pilot confirms Task 3 yields analysable
+ * data.
+ */
 export const DATAPIPE_TEST_MODE = true;
 
 /**

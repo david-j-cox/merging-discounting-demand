@@ -17,33 +17,28 @@ import jsPsychHtmlButtonResponse from "@jspsych/plugin-html-button-response";
 import { STUDY_NAME } from "../config";
 
 // ---------------------------------------------------------------------------
-// Replace these with your IRB-approved values before deploying.
+// Study contact and IRB constants (Endicott College).
 // ---------------------------------------------------------------------------
 
-/** Full institution name as it should appear in the consent text. */
-const INSTITUTION_NAME = "[Institution Name]";
+const INSTITUTION_NAME = "Endicott College";
 
-/** Lead researcher contact for study questions. */
 const RESEARCHER_CONTACT = {
-  name: "[Researcher Name]",
-  email: "[researcher@institution.edu]",
+  name: "David J. Cox, PhD, MSB, BCBA-D",
+  email: "dcox@endicott.edu",
 };
 
-/** Institutional Review Board contact (changes per institution). */
 const IRB_CONTACT = {
   board_name: "Institutional Review Board (IRB)",
-  institution: "[Institution Name]",
-  address_line_1: "[Street Address]",
-  address_line_2: "[City, State, Zip]",
-  email: "[irb@institution.edu]",
+  institution: "Endicott College",
+  address_line_1: "376 Hale Street",
+  address_line_2: "Beverly, MA 01915",
+  email: "irb@endicott.edu",
 };
 
-/** IRB approval / protocol number, if your institution issues one. */
-const IRB_PROTOCOL_NUMBER = "[IRB Protocol #]";
-
-/** Compensation summary — how participants are paid. */
+/** Compensation summary — Prolific pays out at the posted rate. */
 const COMPENSATION_TEXT =
-  "Participants recruited via Prolific will be compensated at the posted Prolific rate.";
+  "Participants recruited via Prolific will be compensated at approximately " +
+  "$12 per hour, prorated for actual session length.";
 
 // ---------------------------------------------------------------------------
 
@@ -107,9 +102,10 @@ const CONSENT_HTML = `
       be used in any reports or presentations of this research.
     </p>
     <p>
-      This research project has been approved by the
+      This research project has been reviewed by the
       ${IRB_CONTACT.board_name} at ${INSTITUTION_NAME}
-      (protocol ${IRB_PROTOCOL_NUMBER}).
+      in accordance with US Department of Health and Human Services
+      Office of Human Research Protections 45 CFR part 46.
     </p>
 
     <h2>Contact</h2>
