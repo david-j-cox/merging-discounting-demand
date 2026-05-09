@@ -16,6 +16,7 @@ import type { CalibrationResult } from "../tasks/calibration";
 import type { EffortDiscountingResult } from "../tasks/effortDiscounting";
 import type { EffortPurchaseTaskResult } from "../tasks/effortPurchaseTask";
 import type { PurchaseTaskResult } from "../tasks/purchaseTask";
+import type { QualityFlags } from "./qualityChecks";
 import type { RandomizationAssignment } from "./randomization";
 
 export interface SessionPayload {
@@ -30,6 +31,10 @@ export interface SessionPayload {
   task1: PurchaseTaskResult;
   task2: EffortDiscountingResult;
   task3: EffortPurchaseTaskResult;
+  /** Subject-level data-quality flags. ``ok=true`` means the subject
+   *  passed every check; analysis-time exclusion decisions live in the
+   *  pre-registered analysis plan. */
+  qualityFlags: QualityFlags;
   /** Free-form raw jsPsych trial data, retained for QA. */
   rawTrials: unknown;
 }
@@ -53,6 +58,7 @@ export function buildPayload(args: {
   task1: PurchaseTaskResult;
   task2: EffortDiscountingResult;
   task3: EffortPurchaseTaskResult;
+  qualityFlags: QualityFlags;
   rawTrials: unknown;
   prolificId?: string | null;
 }): SessionPayload {
@@ -68,6 +74,7 @@ export function buildPayload(args: {
     task1: args.task1,
     task2: args.task2,
     task3: args.task3,
+    qualityFlags: args.qualityFlags,
     rawTrials: args.rawTrials,
   };
 }

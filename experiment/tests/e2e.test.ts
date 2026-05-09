@@ -28,6 +28,25 @@ import { summariseCalibration, type CalibrationTrial } from "../src/tasks/calibr
 import { buildEffortDiscountingTimeline } from "../src/tasks/effortDiscounting";
 import { feasibilityCap } from "../src/tasks/effortPurchaseTask";
 import { EFFORT_FRACTIONS, EFFORT_PRICES, PURCHASE_PRICES_USD, REWARD_MAX_USD } from "../src/config";
+import type { QualityFlags } from "../src/lib/qualityChecks";
+
+const PASSING_QUALITY_FLAGS: QualityFlags = {
+  ok: true,
+  calibrationOk: true,
+  verificationOk: true,
+  monotonicSvOk: true,
+  rtBoundsOk: true,
+  catchTrialOk: true,
+  durationOk: true,
+  detail: {
+    calibrationFlaggedCount: 0,
+    verificationFailureCount: 0,
+    nonMonotonicPairs: 0,
+    rtBoundsHitCount: 0,
+    rtBoundsHitFraction: 0,
+    durationMs: 15 * 60_000,
+  },
+};
 
 describe("E2E: full battery dry run", () => {
   it("produces a complete payload with all expected fields", () => {
@@ -72,6 +91,7 @@ describe("E2E: full battery dry run", () => {
     const task2 = {
       perFraction,
       allChoices: [],
+      verifications: [],
       pMaxUsed: calibration.pMax,
       arm: "low" as const,
       immediateCommodity: "snack_credit" as const,
@@ -101,6 +121,7 @@ describe("E2E: full battery dry run", () => {
       task1,
       task2,
       task3,
+      qualityFlags: PASSING_QUALITY_FLAGS,
       rawTrials: [],
       prolificId: "TEST_PROLIFIC_ID",
     });
@@ -130,11 +151,13 @@ describe("E2E: full battery dry run", () => {
       task2: {
         perFraction: [],
         allChoices: [],
+        verifications: [],
         pMaxUsed: calibration.pMax,
         arm: "low" as const,
         immediateCommodity: "snack_credit" as const,
       },
       task3: { trials: [], pMaxUsed: calibration.pMax, feasibilityCapsByPrice: [] },
+      qualityFlags: PASSING_QUALITY_FLAGS,
       rawTrials: [],
     });
     const json = JSON.stringify(payload);

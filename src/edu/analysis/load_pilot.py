@@ -90,8 +90,15 @@ def parse_session(payload: dict[str, Any], *, source: str = "<dict>") -> LoadedS
     if not isinstance(trials, list) or len(trials) == 0:
         msg = f"{source}.task1.trials must be a non-empty list"
         raise InvalidPayload(msg)
-    P = np.array([float(_require(t, "price", f"{source}.task1.trials")) for t in trials])
-    Q_obs = np.array([float(_require(t, "quantity", f"{source}.task1.trials")) for t in trials])
+    # Skip the attention-check trial: it has isCatch=True and a NaN price.
+    real_trials = [t for t in trials if not t.get("isCatch", False)]
+    if not real_trials:
+        msg = f"{source}.task1.trials contained only catch trials"
+        raise InvalidPayload(msg)
+    P = np.array([float(_require(t, "price", f"{source}.task1.trials")) for t in real_trials])
+    Q_obs = np.array(
+        [float(_require(t, "quantity", f"{source}.task1.trials")) for t in real_trials]
+    )
 
     task2 = _require(payload, "task2", source)
     per_fraction = _require(task2, "perFraction", f"{source}.task2")

@@ -67,3 +67,43 @@ export const MAX_PLAUSIBLE_RATE = 15.0;
 
 /** Tolerance window for sustained-rate verification (fraction of target). */
 export const RATE_TOLERANCE = 0.20;
+
+// ---------------------------------------------------------------------------
+// Quality-check thresholds
+// ---------------------------------------------------------------------------
+
+/** Per-trial RT lower bound for Task 2 choice trials (ms). */
+export const RT_MIN_MS = 500;
+
+/** Per-trial RT upper bound for Task 2 choice trials (ms). */
+export const RT_MAX_MS = 60_000;
+
+/**
+ * Subject-level RT-bound flag fires when this fraction of Task 2 choice
+ * trials hit either bound. ~25% of 36 trials = 9 trials.
+ */
+export const RT_BOUND_SUBJECT_FRACTION = 0.25;
+
+/** Subject-level duration lower bound (ms). Sessions shorter than this
+ *  are flagged as implausibly fast. ~8 minutes. */
+export const DURATION_MIN_MS = 8 * 60_000;
+
+/** Subject-level duration upper bound (ms). Sessions longer than this
+ *  are flagged as walked-away-mid-task. ~60 minutes. */
+export const DURATION_MAX_MS = 60 * 60_000;
+
+/**
+ * Catch trial in Task 1: a normal-looking purchase trial where the
+ * preamble explicitly asks the participant to enter a specific number
+ * (the value below). Failing to enter exactly this number flags the
+ * subject's quality.
+ */
+export const CATCH_TRIAL_EXPECTED_QUANTITY = 7;
+
+/**
+ * Position (0-indexed) at which the catch trial is inserted into Task 1.
+ * Hard-coded rather than randomized so the manipulation is reproducible
+ * across runs and across subjects (the demand-curve fitting in Python
+ * skips this trial by `price === null`).
+ */
+export const CATCH_TRIAL_POSITION = 9;

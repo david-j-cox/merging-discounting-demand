@@ -30,6 +30,7 @@ import {
   RATE_TOLERANCE,
   VERIFICATION_TRIAL_FRACTION,
 } from "../config";
+import { isRtOutsideBounds } from "../lib/qualityChecks";
 import type { SubstitutabilityArm } from "../lib/randomization";
 import { Titrator, type TitrationResult } from "../lib/titration";
 
@@ -67,6 +68,23 @@ export interface EffortDiscountingTrialChoice {
   choice: "immediate" | "effortful";
   /** Reaction time in milliseconds. */
   rtMs: number;
+  /** True if rtMs is outside [RT_MIN_MS, RT_MAX_MS]. */
+  rtFlag?: boolean;
+}
+
+export interface VerificationRecord {
+  /** Effort fraction this verification trial tested. */
+  fraction: number;
+  /** Target rate (presses/sec) the participant was asked to maintain. */
+  targetRate: number;
+  /** Actual observed rate. */
+  observedRate: number;
+  /** Tolerance window (presses/sec) around the target. */
+  tolerance: number;
+  /** True iff |observedRate - targetRate| <= tolerance. */
+  passed: boolean;
+  /** Total presses recorded in the trial window. */
+  nPresses: number;
 }
 
 export interface EffortDiscountingResult {
@@ -74,6 +92,9 @@ export interface EffortDiscountingResult {
   perFraction: { fraction: number; titration: TitrationResult }[];
   /** All choices, in trial order, for the data export. */
   allChoices: EffortDiscountingTrialChoice[];
+  /** Verification trials that ran, in trial order. ~10% of fractions
+   *  by default, so usually 0-1 records per subject. */
+  verifications: VerificationRecord[];
   /** Subject's pMax used to scale effort levels. */
   pMaxUsed: number;
   /** Substitutability arm this participant was in (drives commodity wording). */
@@ -98,8 +119,13 @@ function chooseVerificationIndices(
   return indices;
 }
 
-/** Verification trial: subject performs SUSTAINED_TRIAL_SECONDS at the target rate. */
-function buildVerificationTrial(targetRate: number, fraction: number) {
+/** Verification trial: subject performs SUSTAINED_TRIAL_SECONDS at the target rate.
+ *  Pushes a VerificationRecord into ``records`` when finished. */
+function buildVerificationTrial(
+  targetRate: number,
+  fraction: number,
+  records: VerificationRecord[],
+) {
   // Per-trial closure state (no global stash needed).
   const timestamps: number[] = [];
   let cleanup: () => void = () => {};
@@ -158,7 +184,7 @@ function buildVerificationTrial(targetRate: number, fraction: number) {
       cleanup();
       const observedRate = timestamps.length / SUSTAINED_TRIAL_SECONDS;
       const tolerance = RATE_TOLERANCE * targetRate;
-      data.verification = {
+      const record: VerificationRecord = {
         fraction,
         targetRate,
         observedRate,
@@ -166,6 +192,8 @@ function buildVerificationTrial(targetRate: number, fraction: number) {
         tolerance,
         nPresses: timestamps.length,
       };
+      records.push(record);
+      data.verification = record;
     },
   };
 }
@@ -193,6 +221,7 @@ export function buildEffortDiscountingTimeline(
   const immediateCommodity = immediateCommodityForArm(arm);
   const titrators = new Map<number, Titrator>();
   const allChoices: EffortDiscountingTrialChoice[] = [];
+  const verifications: VerificationRecord[] = [];
 
   // Effortful option label is constant across arms (always snack credits).
   const effortfulLabel = `${REWARD_MAX_USD.toFixed(0)} snack credits`;
@@ -272,6 +301,7 @@ export function buildEffortDiscountingTimeline(
                 immediateCommodity,
                 choice,
                 rtMs: rt,
+                rtFlag: isRtOutsideBounds(rt),
               };
               allChoices.push(choiceRecord);
               data.titration_choice = choiceRecord;
@@ -282,7 +312,7 @@ export function buildEffortDiscountingTimeline(
     }
 
     if (verifyFractions.has(fIdx)) {
-      timeline.push(buildVerificationTrial(targetRate, fraction));
+      timeline.push(buildVerificationTrial(targetRate, fraction, verifications));
     }
   }
 
@@ -295,6 +325,7 @@ export function buildEffortDiscountingTimeline(
       return { fraction, titration: t.result() };
     }),
     allChoices,
+    verifications,
     pMaxUsed: pMax,
     arm,
     immediateCommodity,

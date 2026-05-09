@@ -10,13 +10,22 @@
 import jsPsychInstructions from "@jspsych/plugin-instructions";
 import jsPsychSurveyHtmlForm from "@jspsych/plugin-survey-html-form";
 
-import { PURCHASE_PRICES_USD } from "../config";
+import {
+  CATCH_TRIAL_EXPECTED_QUANTITY,
+  CATCH_TRIAL_POSITION,
+  PURCHASE_PRICES_USD,
+} from "../config";
 
 export interface PurchaseTaskTrial {
   /** Price in USD. */
   price: number;
   /** Quantity reported by participant. */
   quantity: number;
+  /** True if this is the catch trial (a normal-looking trial that explicitly
+   *  asks for a specific quantity). The Python loader skips these. */
+  isCatch?: boolean;
+  /** True if isCatch and the participant entered the wrong quantity. */
+  failedCatch?: boolean;
 }
 
 export interface PurchaseTaskResult {
@@ -31,12 +40,87 @@ const COMMODITY_DESCRIPTION =
   "redeemable for one small packaged snack of your choice (e.g. a candy " +
   "bar, a small bag of chips, or similar).";
 
+/**
+ * Build a normal purchase-task trial (one price, one "how many would
+ * you buy" question). Pushes a PurchaseTaskTrial into ``records``.
+ */
+function buildPriceTrial(
+  price: number,
+  idxLabel: string,
+  records: PurchaseTaskTrial[],
+) {
+  return {
+    type: jsPsychSurveyHtmlForm,
+    preamble: `
+      <h2>Price ${idxLabel}</h2>
+      <p>Each ${COMMODITY_LABEL} costs <strong>$${price.toFixed(2)}</strong>.</p>
+      <p>How many would you buy at this price?</p>
+    `,
+    html: `
+      <p>
+        <label for="qty">Quantity:</label>
+        <input id="qty" name="quantity" type="number" min="0" step="1" required
+               style="width: 6em; font-size: 1.1em;" />
+      </p>
+    `,
+    on_finish: (data: Record<string, unknown>) => {
+      const response = data.response as { quantity?: string };
+      const raw = response?.quantity ?? "0";
+      const qty = Math.max(0, parseInt(raw, 10) || 0);
+      const trial: PurchaseTaskTrial = { price, quantity: qty };
+      records.push(trial);
+      data.purchase_trial = trial;
+    },
+  };
+}
+
+/**
+ * Build the attention-check trial. Looks like a normal purchase trial
+ * but asks the participant to enter a specific number. Sets
+ * ``isCatch`` and ``failedCatch`` on the recorded trial so quality
+ * checks can detect non-attentive subjects.
+ */
+function buildCatchTrial(idxLabel: string, records: PurchaseTaskTrial[]) {
+  return {
+    type: jsPsychSurveyHtmlForm,
+    preamble: `
+      <h2>Attention check</h2>
+      <p>To show you're reading these prompts carefully, please enter the
+         number <strong>${CATCH_TRIAL_EXPECTED_QUANTITY}</strong> in the box below.</p>
+      <p>(This is question ${idxLabel} and is used as an attention check.)</p>
+    `,
+    html: `
+      <p>
+        <label for="qty">Quantity:</label>
+        <input id="qty" name="quantity" type="number" min="0" step="1" required
+               style="width: 6em; font-size: 1.1em;" />
+      </p>
+    `,
+    on_finish: (data: Record<string, unknown>) => {
+      const response = data.response as { quantity?: string };
+      const raw = response?.quantity ?? "0";
+      const qty = Math.max(0, parseInt(raw, 10) || 0);
+      const trial: PurchaseTaskTrial = {
+        price: Number.NaN, // catch trial has no meaningful price
+        quantity: qty,
+        isCatch: true,
+        failedCatch: qty !== CATCH_TRIAL_EXPECTED_QUANTITY,
+      };
+      records.push(trial);
+      data.purchase_trial = trial;
+    },
+  };
+}
+
 /** Full purchase-task timeline plus a `readResult` reader. */
 export function buildPurchaseTaskTimeline(): {
   timeline: unknown[];
   readResult: () => PurchaseTaskResult;
 } {
   const trialRecords: PurchaseTaskTrial[] = [];
+
+  // Total trial count includes the catch trial (one extra "question N of M").
+  const totalTrials = PURCHASE_PRICES_USD.length + 1;
 
   const intro = {
     type: jsPsychInstructions,
@@ -52,30 +136,20 @@ export function buildPurchaseTaskTimeline(): {
     show_clickable_nav: true,
   };
 
-  // One trial per price, in ascending price order.
-  const trials = PURCHASE_PRICES_USD.map((price, idx) => ({
-    type: jsPsychSurveyHtmlForm,
-    preamble: `
-      <h2>Price ${idx + 1} of ${PURCHASE_PRICES_USD.length}</h2>
-      <p>Each ${COMMODITY_LABEL} costs <strong>$${price.toFixed(2)}</strong>.</p>
-      <p>How many would you buy at this price?</p>
-    `,
-    html: `
-      <p>
-        <label for="qty-${idx}">Quantity:</label>
-        <input id="qty-${idx}" name="quantity" type="number" min="0" step="1" required
-               style="width: 6em; font-size: 1.1em;" />
-      </p>
-    `,
-    on_finish: (data: Record<string, unknown>) => {
-      const response = data.response as { quantity?: string };
-      const raw = response?.quantity ?? "0";
-      const qty = Math.max(0, parseInt(raw, 10) || 0);
-      const trial: PurchaseTaskTrial = { price, quantity: qty };
-      trialRecords.push(trial);
-      data.purchase_trial = trial;
-    },
-  }));
+  // Build the trial sequence with the catch trial spliced in at the
+  // configured position.
+  const trials: unknown[] = [];
+  let priceIdx = 0;
+  for (let trialIdx = 0; trialIdx < totalTrials; trialIdx++) {
+    const label = `${trialIdx + 1} of ${totalTrials}`;
+    if (trialIdx === CATCH_TRIAL_POSITION) {
+      trials.push(buildCatchTrial(label, trialRecords));
+    } else {
+      const price = PURCHASE_PRICES_USD[priceIdx] as number;
+      trials.push(buildPriceTrial(price, label, trialRecords));
+      priceIdx++;
+    }
+  }
 
   const timeline = [intro, ...trials];
 

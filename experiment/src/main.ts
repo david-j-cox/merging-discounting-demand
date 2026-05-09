@@ -22,6 +22,7 @@ import {
   downloadPayloadAsJson,
   readProlificId,
 } from "./lib/dataExport";
+import { computeQualityFlags } from "./lib/qualityChecks";
 import { defaultSeed, mulberry32, randomize, type TaskName } from "./lib/randomization";
 import {
   buildCalibrationTimeline,
@@ -157,6 +158,10 @@ async function run(): Promise<void> {
     return;
   }
 
+  // Mark session start *after* consent so the duration check measures the
+  // actual task time (not time spent reading the consent form).
+  const startedAtMs = Date.now();
+
   // ---- Calibration ----
   await jsPsych.run(calTimeline as RunTimeline);
   const calResult = collectCalibration();
@@ -185,14 +190,27 @@ async function run(): Promise<void> {
     battery.push(...builders[taskName].timeline);
   }
   await jsPsych.run([...battery, DEBRIEF_TRIAL] as RunTimeline);
+  const finishedAtMs = Date.now();
 
   // ---- Build payload and export ----
+  const task1Result = t1.readResult();
+  const task2Result = t2.readResult();
+  const task3Result = t3.readResult();
+  const qualityFlags = computeQualityFlags({
+    calibration: calResult,
+    task1: task1Result,
+    task2: task2Result,
+    startedAtMs,
+    finishedAtMs,
+  });
+
   const payload = buildPayload({
     randomization: assignment,
     calibration: calResult,
-    task1: t1.readResult(),
-    task2: t2.readResult(),
-    task3: t3.readResult(),
+    task1: task1Result,
+    task2: task2Result,
+    task3: task3Result,
+    qualityFlags,
     rawTrials: jsPsych.data.get().values(),
     prolificId,
   });
