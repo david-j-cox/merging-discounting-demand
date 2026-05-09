@@ -6,6 +6,17 @@
  * for `SUSTAINED_TRIAL_SECONDS`. Mostly hypothetical; a sparse
  * `VERIFICATION_TRIAL_FRACTION` of trials require the real key-press
  * task as a compliance check.
+ *
+ * **Arm manipulation (H3).** The effortful option always pays
+ * `REWARD_MAX_USD` snack credits. The *immediate* option's commodity
+ * differs by arm:
+ *   - low-IF: "X snack credits now" (perfect substitute for the
+ *     effortful reward; participants should accept lower X to skip
+ *     the effort).
+ *   - high-IF: "$X cash now" (different commodity; substitutability
+ *     depends on each participant's private cash-vs-credit valuation).
+ * The Titrator operates on the numeric offer in arbitrary units (0 to
+ * REWARD_MAX_USD); only the displayed currency text differs by arm.
  */
 
 import jsPsychHtmlButtonResponse from "@jspsych/plugin-html-button-response";
@@ -19,7 +30,23 @@ import {
   RATE_TOLERANCE,
   VERIFICATION_TRIAL_FRACTION,
 } from "../config";
+import type { SubstitutabilityArm } from "../lib/randomization";
 import { Titrator, type TitrationResult } from "../lib/titration";
+
+export type ImmediateCommodity = "snack_credit" | "cash";
+
+/** Format the immediate-option offer for display (e.g. "5 snack credits", "$5.00 cash"). */
+function formatImmediateOffer(value: number, commodity: ImmediateCommodity): string {
+  if (commodity === "cash") return `$${value.toFixed(2)} cash`;
+  // Snack credits: round to integer; "1 snack credit" vs "N snack credits".
+  const n = Math.round(value);
+  return `${n} snack credit${n === 1 ? "" : "s"}`;
+}
+
+/** Map an arm assignment to the commodity displayed for the immediate option. */
+function immediateCommodityForArm(arm: SubstitutabilityArm): ImmediateCommodity {
+  return arm === "low" ? "snack_credit" : "cash";
+}
 
 export interface EffortDiscountingTrialChoice {
   /** Effort fraction (10-85% of pMax). */
@@ -28,8 +55,14 @@ export interface EffortDiscountingTrialChoice {
   targetRate: number;
   /** Step within the titration (0-indexed). */
   step: number;
-  /** Immediate-reward offer in USD. */
+  /**
+   * Numeric immediate-reward offer. Units depend on
+   * ``immediateCommodity``: dollars for ``cash``, integer count for
+   * ``snack_credit``.
+   */
   offer: number;
+  /** Commodity displayed on the immediate option this trial. */
+  immediateCommodity: ImmediateCommodity;
   /** Subject's choice. */
   choice: "immediate" | "effortful";
   /** Reaction time in milliseconds. */
@@ -43,6 +76,10 @@ export interface EffortDiscountingResult {
   allChoices: EffortDiscountingTrialChoice[];
   /** Subject's pMax used to scale effort levels. */
   pMaxUsed: number;
+  /** Substitutability arm this participant was in (drives commodity wording). */
+  arm: SubstitutabilityArm;
+  /** Commodity displayed for the immediate option (derived from arm). */
+  immediateCommodity: ImmediateCommodity;
 }
 
 /** Pick `~nTotal*fraction` trial indices for verification, skipping index 0. */
@@ -143,6 +180,7 @@ function buildVerificationTrial(targetRate: number, fraction: number) {
  */
 export function buildEffortDiscountingTimeline(
   pMax: number,
+  arm: SubstitutabilityArm,
   rng: () => number = Math.random,
 ): { timeline: unknown[]; readResult: () => EffortDiscountingResult } {
   const totalFractions = EFFORT_FRACTIONS.length;
@@ -152,8 +190,18 @@ export function buildEffortDiscountingTimeline(
     rng,
   );
 
+  const immediateCommodity = immediateCommodityForArm(arm);
   const titrators = new Map<number, Titrator>();
   const allChoices: EffortDiscountingTrialChoice[] = [];
+
+  // Effortful option label is constant across arms (always snack credits).
+  const effortfulLabel = `${REWARD_MAX_USD.toFixed(0)} snack credits`;
+
+  // Immediate-option intro phrasing differs by arm.
+  const immediateIntro =
+    immediateCommodity === "snack_credit"
+      ? "Take a smaller number of <strong>snack credits</strong> now, with no effort."
+      : "Take a smaller amount of <strong>cash</strong> now, with no effort.";
 
   const intro = {
     type: jsPsychInstructions,
@@ -161,10 +209,10 @@ export function buildEffortDiscountingTimeline(
       `<h2>Effort discounting</h2>
        <p>You'll choose between two options on each trial:</p>
        <ul>
-         <li>Take a smaller amount of money <strong>now</strong>, with no effort.</li>
-         <li>Earn $${REWARD_MAX_USD.toFixed(2)} by performing a key-press task at a target rate.</li>
+         <li>${immediateIntro}</li>
+         <li>Earn ${effortfulLabel} by performing a key-press task at a target rate.</li>
        </ul>
-       <p>Most trials are hypothetical &mdash; please choose as if the money and effort were real.
+       <p>Most trials are hypothetical &mdash; please choose as if the rewards and effort were real.
           A small number of trials will ask you to actually perform the task.</p>`,
       `<p>Your earlier calibration set your maximum rate at about
          <strong>${pMax.toFixed(1)} presses/sec</strong>.
@@ -203,8 +251,8 @@ export function buildEffortDiscountingTimeline(
             choices: () => {
               const offer = titrator.nextOffer();
               return [
-                `Take $${offer.toFixed(2)} now`,
-                `Do the effort task for $${REWARD_MAX_USD.toFixed(2)}`,
+                `Take ${formatImmediateOffer(offer, immediateCommodity)} now`,
+                `Do the effort task for ${effortfulLabel}`,
               ];
             },
             on_finish: (data: Record<string, unknown>) => {
@@ -221,6 +269,7 @@ export function buildEffortDiscountingTimeline(
                 targetRate,
                 step,
                 offer: recordedStep.offer,
+                immediateCommodity,
                 choice,
                 rtMs: rt,
               };
@@ -247,6 +296,8 @@ export function buildEffortDiscountingTimeline(
     }),
     allChoices,
     pMaxUsed: pMax,
+    arm,
+    immediateCommodity,
   });
 
   return { timeline, readResult };

@@ -122,11 +122,12 @@ async function run(): Promise<void> {
   };
 
   // Per-task builders. Each takes pMax and returns a TaskTimeline whose
-  // readResult yields the task-specific typed result object.
+  // readResult yields the task-specific typed result object. Task 2 also
+  // takes the arm assignment, which drives the immediate-option commodity.
   const buildTask1 = (_pMax: number): TaskTimeline<PurchaseTaskResult> =>
     buildPurchaseTaskTimeline();
   const buildTask2 = (pMax: number): TaskTimeline<EffortDiscountingResult> =>
-    buildEffortDiscountingTimeline(pMax, mulberry32(seed + 1));
+    buildEffortDiscountingTimeline(pMax, assignment.arm, mulberry32(seed + 1));
   const buildTask3 = (pMax: number): TaskTimeline<EffortPurchaseTaskResult> =>
     buildEffortPurchaseTaskTimeline(pMax);
 

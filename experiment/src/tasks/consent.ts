@@ -58,12 +58,19 @@ const CONSENT_HTML = `
     </p>
     <p>
       In this study you will (a) calibrate your maximum sustained
-      key-press rate, (b) answer questions about how many of a small
-      hypothetical commodity you would buy at a series of prices, (c)
-      choose between an immediate small reward and a larger reward
+      key-press rate, (b) answer questions about how many
+      <em>snack credits</em> you would buy at a series of prices,
+      (c) choose between an immediate small reward and a larger reward
       that would require a sustained key-press effort, and (d) answer
-      questions about how many rewards you would acquire at a series of
-      effort costs.
+      questions about how many snack credits you would acquire at a
+      series of effort costs.
+    </p>
+    <p>
+      Throughout this study, a <strong>snack credit</strong> is
+      hypothetically redeemable for one small packaged snack of your
+      choice (for example, a candy bar, a small bag of chips, or
+      similar). All choices in this study are hypothetical; no actual
+      snacks will be exchanged.
     </p>
 
     <h2>Participation</h2>

@@ -1,8 +1,10 @@
 /**
  * Task 1: standard hypothetical purchase task. For each price in
- * `PURCHASE_PRICES_USD`, ask how many of the (generic snack)
- * commodity the participant would buy. Demand-curve fitting happens
- * post-hoc in Python.
+ * `PURCHASE_PRICES_USD`, ask how many *snack credits* the participant
+ * would buy. Snack credits are the unified commodity throughout this
+ * study (defined in the consent text); see Task 2 / Task 3 for the
+ * other side of the H1 linkage. Demand-curve fitting happens post-hoc
+ * in Python.
  */
 
 import jsPsychInstructions from "@jspsych/plugin-instructions";
@@ -24,9 +26,10 @@ export interface PurchaseTaskResult {
   commodity: string;
 }
 
-const COMMODITY_LABEL = "snack item";
+const COMMODITY_LABEL = "snack credit";
 const COMMODITY_DESCRIPTION =
-  "a single small packaged snack (e.g. a candy bar, a small bag of chips, or similar).";
+  "redeemable for one small packaged snack of your choice (e.g. a candy " +
+  "bar, a small bag of chips, or similar).";
 
 /** Full purchase-task timeline plus a `readResult` reader. */
 export function buildPurchaseTaskTimeline(): {

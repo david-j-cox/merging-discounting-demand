@@ -4,10 +4,10 @@
  *
  * Parallel to Task 1 with effort substituted for money: each "price"
  * is `effortPrice` seconds of sustained key-pressing at `pMax`, and
- * the participant reports how many max-reward units they would
- * acquire. Under the unified model both `Q(P_money)` and
- * `Q(P_effort)` follow Koffarnus demand with a *shared* alpha — that
- * shared-alpha hypothesis is the H1 test.
+ * the participant reports how many *snack credits* they would acquire
+ * at that effort price. Under the unified model both `Q(P_money)` and
+ * `Q(P_effort)` for snack credits follow Koffarnus demand with a
+ * *shared* alpha — the shared-alpha hypothesis is the H1 test.
  *
  * Bounds: a soft cap from a `HYPOTHETICAL_BUDGET_MINUTES` time
  * budget triggers a warning if exceeded but does not reject the
@@ -17,7 +17,7 @@
 import jsPsychInstructions from "@jspsych/plugin-instructions";
 import jsPsychSurveyHtmlForm from "@jspsych/plugin-survey-html-form";
 
-import { EFFORT_PRICES, REWARD_MAX_USD } from "../config";
+import { EFFORT_PRICES } from "../config";
 
 export interface EffortPurchaseTrial {
   /** Effort price (effort-seconds per acquired reward unit). */
@@ -57,14 +57,14 @@ export function buildEffortPurchaseTaskTimeline(pMax: number): {
     pages: [
       `<h2>Effort purchase task</h2>
        <p>Now imagine you have unlimited <strong>time</strong> for this task,
-          but each acquired reward costs <em>effort</em> instead of money.</p>
-       <p>You can earn $${REWARD_MAX_USD.toFixed(2)} per acquisition. Each acquisition
-          costs you a fixed amount of sustained key-pressing at your maximum
-          rate (about ${pMax.toFixed(1)} presses/sec).</p>
-       <p>For each effort price below, please report how many acquisitions you
-          would make.</p>`,
+          but each acquired <strong>snack credit</strong> costs <em>effort</em>
+          instead of money.</p>
+       <p>Each snack credit costs you a fixed amount of sustained key-pressing
+          at your maximum rate (about ${pMax.toFixed(1)} presses/sec).</p>
+       <p>For each effort price below, please report how many snack credits
+          you would acquire.</p>`,
       `<p>Imagine you have about ${HYPOTHETICAL_BUDGET_MINUTES} minutes available for the task.
-          That sets a soft cap on how many units are physically achievable; the system
+          That sets a soft cap on how many snack credits are physically achievable; the system
           will warn you if you exceed it but will record whatever you enter.</p>
        <p>Click <strong>Next</strong> to begin.</p>`,
     ],
@@ -77,12 +77,12 @@ export function buildEffortPurchaseTaskTimeline(pMax: number): {
       type: jsPsychSurveyHtmlForm,
       preamble: `
         <h2>Effort price ${idx + 1} of ${EFFORT_PRICES.length}</h2>
-        <p>Each acquisition costs <strong>${effortPrice.toFixed(2)} seconds</strong>
+        <p>Each <strong>snack credit</strong> costs
+           <strong>${effortPrice.toFixed(2)} seconds</strong>
            of sustained key-pressing at your maximum rate.</p>
-        <p>You earn <strong>$${REWARD_MAX_USD.toFixed(2)}</strong> per acquisition.</p>
         <p>Soft feasibility cap (${HYPOTHETICAL_BUDGET_MINUTES} minutes available):
-           about ${cap} acquisitions.</p>
-        <p>How many acquisitions would you make at this effort price?</p>
+           about ${cap} snack credits.</p>
+        <p>How many snack credits would you acquire at this effort price?</p>
       `,
       html: `
         <p>

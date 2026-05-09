@@ -25,6 +25,7 @@ import {
 import { randomize } from "../src/lib/randomization";
 import { Titrator, simulate } from "../src/lib/titration";
 import { summariseCalibration, type CalibrationTrial } from "../src/tasks/calibration";
+import { buildEffortDiscountingTimeline } from "../src/tasks/effortDiscounting";
 import { feasibilityCap } from "../src/tasks/effortPurchaseTask";
 import { EFFORT_FRACTIONS, EFFORT_PRICES, PURCHASE_PRICES_USD, REWARD_MAX_USD } from "../src/config";
 
@@ -72,6 +73,8 @@ describe("E2E: full battery dry run", () => {
       perFraction,
       allChoices: [],
       pMaxUsed: calibration.pMax,
+      arm: "low" as const,
+      immediateCommodity: "snack_credit" as const,
     };
 
     // Simulate Task 3 (effort purchase task): consumption falling with effort price.
@@ -124,7 +127,13 @@ describe("E2E: full battery dry run", () => {
       randomization: randomize(0),
       calibration,
       task1: { trials: [], commodity: "" },
-      task2: { perFraction: [], allChoices: [], pMaxUsed: calibration.pMax },
+      task2: {
+        perFraction: [],
+        allChoices: [],
+        pMaxUsed: calibration.pMax,
+        arm: "low" as const,
+        immediateCommodity: "snack_credit" as const,
+      },
       task3: { trials: [], pMaxUsed: calibration.pMax, feasibilityCapsByPrice: [] },
       rawTrials: [],
     });
@@ -167,5 +176,35 @@ describe("E2E: titration recovery on a smooth chooser", () => {
 
     const pure = simulate(chooser).indifference;
     expect(stateful).toBe(pure);
+  });
+});
+
+describe("E2E: H3 substitutability arm wording", () => {
+  // Pull the choice-button text from the first titration trial's choices()
+  // function. The button labels are what distinguishes the arms; this test
+  // guards against a future regression that would silently make both arms
+  // identical (which would erase H3).
+  function firstChoiceLabels(arm: "low" | "high"): string[] {
+    const built = buildEffortDiscountingTimeline(5.0, arm, () => 0.5);
+    // Element 0 is the intro; element 1 is the first titration step
+    // (a procedural-form trial with a nested timeline).
+    const stepWrapper = built.timeline[1] as { timeline: Array<{ choices: () => string[] }> };
+    const stepTrial = stepWrapper.timeline[0] as { choices: () => string[] };
+    return stepTrial.choices();
+  }
+
+  it("low-IF arm offers immediate snack credits (the substitute)", () => {
+    const labels = firstChoiceLabels("low");
+    expect(labels[0]).toMatch(/snack credit/i);
+    expect(labels[0]).not.toMatch(/cash|\$/);
+    expect(labels[1]).toMatch(/snack credit/i);
+  });
+
+  it("high-IF arm offers immediate cash (the non-substitute)", () => {
+    const labels = firstChoiceLabels("high");
+    expect(labels[0]).toMatch(/\$/);
+    expect(labels[0]).toMatch(/cash/i);
+    // Effortful side is always snack credits regardless of arm.
+    expect(labels[1]).toMatch(/snack credit/i);
   });
 });
